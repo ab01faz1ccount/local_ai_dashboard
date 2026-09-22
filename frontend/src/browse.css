@@ -1,0 +1,113 @@
+/*
+ * Styles for Settings -> Browse and the file picker dialog.
+ *
+ * Colors come from the CSS variables below. They default to a dark theme
+ * (with a light-scheme override); if the app already has its own
+ * theme variables, point these at them and everything follows.
+ */
+:root {
+  --browse-surface: #1d1f26;
+  --browse-surface-2: #262932;
+  --browse-border: rgba(127, 127, 127, 0.35);
+  --browse-text: #e6e8ee;
+  --browse-muted: #9aa0ae;
+  --browse-accent: #4c8dff;
+  --browse-ok: #3fb96b;
+  --browse-warn: #e0a030;
+  --browse-danger: #e5534b;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --browse-surface: #ffffff;
+    --browse-surface-2: #f1f2f6;
+    --browse-text: #1b1d24;
+    --browse-muted: #626878;
+  }
+}
+
+/* ---------- file picker dialog ---------- */
+.browse-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+.browse-dialog {
+  background: var(--browse-surface);
+  color: var(--browse-text);
+  border: 1px solid var(--browse-border);
+  border-radius: 10px;
+  width: min(760px, 100%);
+  max-height: min(640px, 92vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.browse-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--browse-border);
+}
+.browse-dialog-header h3 { margin: 0; font-size: 15px; }
+.browse-pathbar { display: flex; gap: 6px; padding: 10px 16px 0; }
+.browse-pathbar input { flex: 1; min-width: 0; font-family: var(--font-mono, monospace); font-size: 12px; }
+.browse-roots { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 16px; }
+.browse-roots button { font-size: 12px; padding: 3px 8px; }
+.browse-list { flex: 1; overflow-y: auto; margin: 0 16px; border: 1px solid var(--browse-border); border-radius: 6px; min-height: 180px; }
+.browse-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  background: transparent;
+  color: inherit;
+  border: 0;
+  border-bottom: 1px solid var(--browse-border);
+  text-align: start;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+.browse-row:last-child { border-bottom: 0; }
+.browse-row:hover { background: var(--browse-surface-2); }
+.browse-row.selected { background: color-mix(in srgb, var(--browse-accent) 25%, transparent); }
+.browse-row .browse-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.browse-row .browse-size { color: var(--browse-muted); font-size: 12px; }
+.browse-empty { padding: 20px; text-align: center; color: var(--browse-muted); font-size: 13px; }
+.browse-dialog-footer { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--browse-border); margin-top: 10px; }
+.browse-selected { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono, monospace); font-size: 12px; color: var(--browse-muted); }
+.browse-hidden-toggle { display: flex; align-items: center; gap: 4px; padding: 6px 16px 0; font-size: 12px; color: var(--browse-muted); }
+
+/* ---------- Browse tab ---------- */
+.browse-segmented { display: inline-flex; border: 1px solid var(--browse-border); border-radius: 8px; overflow: hidden; }
+.browse-segmented button { border: 0; border-radius: 0; background: transparent; color: inherit; padding: 6px 14px; cursor: pointer; }
+.browse-segmented button.active { background: var(--browse-accent); color: #fff; }
+.browse-toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
+.browse-card { border: 1px solid var(--browse-border); border-radius: 8px; padding: 12px; margin-top: 10px; background: var(--browse-surface-2); }
+.browse-card h4 { margin: 0 0 4px; font-size: 14px; }
+.browse-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.browse-meta { color: var(--browse-muted); font-size: 12px; margin-top: 2px; }
+.browse-badge { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 10px; border: 1px solid var(--browse-border); margin-inline-start: 6px; }
+.browse-badge.warn { color: var(--browse-warn); border-color: var(--browse-warn); }
+.browse-badge.ok { color: var(--browse-ok); border-color: var(--browse-ok); }
+.browse-banner { border: 1px solid var(--browse-warn); color: var(--browse-warn); border-radius: 8px; padding: 8px 12px; font-size: 13px; margin-bottom: 12px; }
+.browse-search { display: flex; gap: 8px; }
+.browse-search input { flex: 1; min-width: 0; }
+.browse-file-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; border-top: 1px solid var(--browse-border); font-size: 13px; }
+.browse-file-row:first-child { border-top: 0; }
+.browse-progress { height: 6px; border-radius: 3px; background: var(--browse-border); overflow: hidden; margin-top: 6px; }
+.browse-progress > div { height: 100%; background: var(--browse-accent); transition: width 0.4s; }
+.browse-progress.done > div { background: var(--browse-ok); }
+.browse-progress.error > div { background: var(--browse-danger); }
+.browse-log { max-height: 180px; overflow: auto; background: #0d0e12; color: #d7d9df; padding: 8px; border-radius: 6px; font-size: 12px; white-space: pre-wrap; margin: 8px 0 0; }
+.browse-command { font-family: var(--font-mono, monospace); font-size: 12px; background: var(--browse-surface); border: 1px solid var(--browse-border); border-radius: 6px; padding: 6px 8px; word-break: break-all; }
+.browse-confirm { border: 1px solid var(--browse-warn); border-radius: 8px; padding: 10px; margin-top: 8px; }
+.browse-error { color: var(--browse-danger); font-size: 13px; margin-top: 8px; }
+.browse-ok { color: var(--browse-ok); font-size: 13px; margin-top: 8px; }

@@ -1,0 +1,19 @@
+# virtual environment -- never commit this
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# local runtime data
+*.sqlite3
+control_center.sqlite3
+*.log
+
+# local secrets / generated config
+.env
+local_config.json
+
+# frontend
+node_modules/
+dist/
+build/
