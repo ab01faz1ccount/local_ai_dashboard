@@ -426,6 +426,54 @@ class OnboardingState(Base):
     __table_args__ = (CheckConstraint("id = 1", name="ck_onboarding_singleton"),)
 
 
+class Event(Base):
+    """The structured event log (master build prompt section 16) --
+    append-only, written only via core/events/bus.py's EventBus, never
+    directly. `event_id` is a uuid4 hex kept distinct from the
+    autoincrement `id` so an event's identity is stable even across a
+    future export/import or cross-device merge; `id` stays the natural
+    ordering key for pagination since it's monotonic and index-friendly
+    in a way a uuid isn't.
+
+    `runtime_id`/`agent_id`/`session_id` use ON DELETE SET NULL (not
+    CASCADE) on purpose: deleting a runtime should not erase the history
+    of events that happened while it existed -- an event log that
+    disappears the moment its subject is deleted defeats the point of
+    having one. `source_*` mirrors the Synapse-facing `source` object
+    every event carries, same source_system/project_id/agent_id/
+    session_id/task_id shape used elsewhere in this file, defaulting to
+    local-only until a real Synapse bridge exists.
+    """
+
+    __tablename__ = "events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event_id: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    event_type: Mapped[str] = mapped_column(String, nullable=False)
+    timestamp: Mapped[str] = mapped_column(String, default=_utcnow_iso)
+
+    device_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    runtime_id: Mapped[Optional[int]] = mapped_column(ForeignKey("runtimes.id", ondelete="SET NULL"), nullable=True)
+    agent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("agents.id", ondelete="SET NULL"), nullable=True)
+    session_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("llm_agent_sessions.id", ondelete="SET NULL"), nullable=True
+    )
+
+    source_system: Mapped[str] = mapped_column(String, default="local")
+    source_project_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    source_agent_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    source_session_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    source_task_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    metadata_json: Mapped[dict] = mapped_column(JSONText, default=dict)
+
+    __table_args__ = (
+        Index("idx_events_type_id", "event_type", "id"),
+        Index("idx_events_runtime_id", "runtime_id", "id"),
+        Index("idx_events_agent_id", "agent_id", "id"),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Engine / Session setup
 # ---------------------------------------------------------------------------
@@ -768,6 +816,58 @@ def insert_metrics_snapshot(db: Session, runtime_id: Optional[int], **metrics) -
     db.commit()
     db.refresh(snap)
     return snap
+
+
+# ---------------------------------------------------------------------------
+# Query helpers — the structured event log (core/events/bus.py is the only
+# caller of insert_event; everything else should only ever read)
+# ---------------------------------------------------------------------------
+
+def insert_event(db: Session, **fields) -> Event:
+    ev = Event(**fields)
+    db.add(ev)
+    db.commit()
+    db.refresh(ev)
+    return ev
+
+
+def list_events(
+    db: Session,
+    *,
+    event_types: Optional[list[str]] = None,
+    type_prefix: Optional[str] = None,
+    runtime_id: Optional[int] = None,
+    agent_id: Optional[int] = None,
+    session_id: Optional[int] = None,
+    since: Optional[str] = None,
+    before_id: Optional[int] = None,
+    limit: int = 100,
+) -> list[Event]:
+    """Newest-first by default (`id` DESC — monotonic, so this doubles as
+    recency order without relying on timestamp string comparison across
+    clock adjustments). `before_id` is the pagination cursor: pass the
+    smallest `id` seen so far to page further back in time.
+    `event_types` and `type_prefix` are ANDed together like every other
+    filter here, so pass at most one -- the API layer only ever sends
+    one or the other, depending on whether the person typed an exact
+    type or a "runtime."-style prefix.
+    """
+    q = db.query(Event)
+    if event_types:
+        q = q.filter(Event.event_type.in_(event_types))
+    if type_prefix:
+        q = q.filter(Event.event_type.like(f"{type_prefix}%"))
+    if runtime_id is not None:
+        q = q.filter(Event.runtime_id == runtime_id)
+    if agent_id is not None:
+        q = q.filter(Event.agent_id == agent_id)
+    if session_id is not None:
+        q = q.filter(Event.session_id == session_id)
+    if since is not None:
+        q = q.filter(Event.timestamp >= since)
+    if before_id is not None:
+        q = q.filter(Event.id < before_id)
+    return q.order_by(Event.id.desc()).limit(limit).all()
 
 
 # ---------------------------------------------------------------------------

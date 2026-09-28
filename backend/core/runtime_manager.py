@@ -19,6 +19,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from . import events
 from .engine.base import EngineMetrics, EngineStatus, InferenceEngine, RuntimeState
 from .engine.llama_cpp_engine import LlamaCppEngine
 from .platform.base import PlatformProvider, get_platform_provider
@@ -53,12 +54,14 @@ class RuntimeManager:
             config.setdefault("model_path", runtime.model.file_path)
         status = engine.start(config)
         self._sync_db(db, runtime, status)
+        self._emit_for_outcome(runtime, status, phase="start")
         return status
 
     def stop(self, db: Session, runtime: Runtime, timeout: float = 10.0) -> EngineStatus:
         engine = self._get_or_create_engine(runtime)
         status = engine.stop(timeout=timeout)
         self._sync_db(db, runtime, status)
+        self._emit_for_outcome(runtime, status, phase="stop")
         return status
 
     def restart(self, db: Session, runtime: Runtime) -> EngineStatus:
@@ -68,13 +71,71 @@ class RuntimeManager:
             config.setdefault("model_path", runtime.model.file_path)
         status = engine.restart(config)
         self._sync_db(db, runtime, status)
+        if status.state == RuntimeState.ONLINE:
+            # A restart really is "it stopped, then it started again" --
+            # emitting both (rather than inventing a runtime.restarted
+            # type) keeps every consumer of the event log working from
+            # the same small, spec-defined vocabulary.
+            events.emit(events.EventType.RUNTIME_STOPPED, runtime_id=runtime.id, metadata={"reason": "restart"})
+            self._emit_started(runtime, status, extra_metadata={"reason": "restart"})
+        elif status.state == RuntimeState.ERROR:
+            events.emit(
+                events.EventType.RUNTIME_CRASHED,
+                runtime_id=runtime.id,
+                metadata={"phase": "restart", "error": status.error_message},
+            )
         return status
 
     def get_status(self, db: Session, runtime: Runtime) -> EngineStatus:
+        # Snapshot the DB's last-known state BEFORE _sync_db overwrites it,
+        # so a poll (this is what the /ws/metrics loop calls every ~1.5s)
+        # can tell "still ONLINE" apart from "was ONLINE, just died" --
+        # the actual crash-detection case start()/stop()/restart() above
+        # can't see, since nothing called them for this transition.
+        previous_state = runtime.status
         engine = self._get_or_create_engine(runtime)
         status = engine.get_status()
         self._sync_db(db, runtime, status)
+
+        if previous_state == RuntimeState.ONLINE.value and status.state == RuntimeState.ERROR:
+            events.emit(
+                events.EventType.RUNTIME_CRASHED,
+                runtime_id=runtime.id,
+                metadata={"phase": "poll", "error": status.error_message},
+            )
+        elif previous_state == RuntimeState.ONLINE.value and status.state == RuntimeState.OFFLINE:
+            # The process ended without going through this manager's own
+            # stop() -- still worth a runtime.stopped, just flagged with
+            # how it was noticed rather than claiming it was requested.
+            events.emit(
+                events.EventType.RUNTIME_STOPPED, runtime_id=runtime.id, metadata={"detected_via": "poll"}
+            )
         return status
+
+    def _emit_started(self, runtime: Runtime, status: EngineStatus, extra_metadata: Optional[dict] = None) -> None:
+        metadata = {"endpoint": status.endpoint, **(extra_metadata or {})}
+        events.emit(events.EventType.RUNTIME_STARTED, runtime_id=runtime.id, metadata=metadata)
+        if runtime.model_id is not None:
+            events.emit(events.EventType.MODEL_LOADED, runtime_id=runtime.id, metadata={"model_id": runtime.model_id})
+
+    def _emit_for_outcome(self, runtime: Runtime, status: EngineStatus, *, phase: str) -> None:
+        """Shared by start()/stop(): report exactly what happened, not
+        just what was asked for -- a failed stop still ends in ERROR, not
+        OFFLINE, and that has to show up as runtime.crashed, not silence."""
+        if status.state == RuntimeState.ONLINE:
+            self._emit_started(runtime, status)
+        elif status.state == RuntimeState.OFFLINE:
+            events.emit(events.EventType.RUNTIME_STOPPED, runtime_id=runtime.id)
+            if runtime.model_id is not None:
+                events.emit(
+                    events.EventType.MODEL_UNLOADED, runtime_id=runtime.id, metadata={"model_id": runtime.model_id}
+                )
+        elif status.state == RuntimeState.ERROR:
+            events.emit(
+                events.EventType.RUNTIME_CRASHED,
+                runtime_id=runtime.id,
+                metadata={"phase": phase, "error": status.error_message},
+            )
 
     def get_metrics(self, runtime: Runtime) -> EngineMetrics:
         engine = self._get_or_create_engine(runtime)

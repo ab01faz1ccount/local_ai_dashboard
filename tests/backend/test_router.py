@@ -11,8 +11,14 @@ from backend.storage import db as storage_db
 from backend.api import http, discovery
 from backend.core import connectivity, model_discovery as md
 from backend.core.agents import paths as agent_paths
+from backend.core.security import get_or_create_access_token
 
-AUTH = {"Authorization": "Bearer test-token"}
+# The real token, not a hardcoded fake one: http.py computes its own
+# _ACCESS_TOKEN at import time via this exact function, reading/writing
+# the same cwd-relative local_config.json conftest.py already isolated
+# us into -- so this returns the identical value require_token checks
+# against, the same way a real client would fetch it once and reuse it.
+AUTH = {"Authorization": f"Bearer {get_or_create_access_token()}"}
 
 
 @pytest.fixture(scope="module", autouse=True)

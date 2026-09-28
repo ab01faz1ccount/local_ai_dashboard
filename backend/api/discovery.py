@@ -41,6 +41,7 @@ from sqlalchemy.orm import Session
 from ..core import agent_discovery
 from ..core import agents as agent_backends
 from ..core import connectivity, fs_browser
+from ..core import events
 from ..core import model_discovery
 from ..core import models as model_manager
 from ..core.agents import paths as agent_paths
@@ -179,6 +180,11 @@ def register_local_agent(body: RegisterLocalRequest, db: Session = Depends(get_d
         db.commit()
         db.refresh(agent)
         storage_db.update_onboarding_state(db, first_agent_created=True)
+        events.emit(
+            events.EventType.AGENT_CREATED,
+            agent_id=agent.id,
+            metadata={"name": agent.name, "agent_backend": agent.agent_backend, "via": "browse"},
+        )
 
     return {
         "agent": _agent_to_dict(agent),

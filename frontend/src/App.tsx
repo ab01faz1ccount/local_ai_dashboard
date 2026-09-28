@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ApiError, api, getStoredToken, setStoredToken } from "./api";
 import { ChatView } from "./ChatView";
 import { Dashboard } from "./Dashboard";
+import { LogsPage } from "./LogsPage";
 import { ModelsPage } from "./ModelsPage";
 import { OnboardingWizard } from "./OnboardingWizard";
 import { ProjectsPage } from "./ProjectsPage";
@@ -96,7 +97,7 @@ export default function App() {
   return <MainShell />;
 }
 
-type View = "dashboard" | "models" | "projects" | "chats" | "setup" | "settings";
+type View = "dashboard" | "models" | "projects" | "chats" | "logs" | "setup" | "settings";
 
 function MainShell() {
   const [view, setView] = useState<View>("dashboard");
@@ -124,6 +125,9 @@ function MainShell() {
           <button className={view === "chats" ? "active" : ""} onClick={() => setView("chats")}>
             Chats
           </button>
+          <button className={view === "logs" ? "active" : ""} onClick={() => setView("logs")}>
+            Logs
+          </button>
           <button className={view === "setup" ? "active" : ""} onClick={() => setView("setup")}>
             Setup
           </button>
@@ -137,6 +141,7 @@ function MainShell() {
       {view === "models" && <ModelsPage />}
       {view === "projects" && <ProjectsPage onOpenChat={openChat} />}
       {view === "chats" && <ChatView initialChatId={pendingChatId} />}
+      {view === "logs" && <LogsPage />}
       {view === "setup" && (
         <OnboardingWizard onComplete={() => setView("dashboard")} onCancel={() => setView("dashboard")} />
       )}

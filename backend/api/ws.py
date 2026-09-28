@@ -1,8 +1,12 @@
 """
 backend/api/ws.py
 
-Two WebSocket endpoints:
+Three WebSocket endpoints:
   - /ws/metrics -- periodic hardware/runtime snapshot push (unchanged).
+  - /ws/events -- live tail of the structured event log (core/events/).
+    Every event is also durably persisted (GET /api/v1/events is the
+    history view of the same stream); this is the "watch it happen"
+    view for a future Logs/Notifications panel.
   - /ws/agent-terminal/{agent_id} -- attaches to a real, live agent CLI
     process (Hermes today) running under a pseudo-terminal, so the
     browser gets the agent's actual interactive session -- its own
@@ -19,11 +23,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import queue
 from dataclasses import asdict
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from ..core import agents as agent_backends
+from ..core import events as events_module
 from ..core.agents.pty_session import PtySession
 from ..core.runtime_manager import runtime_manager
 from ..core.security import get_or_create_access_token
@@ -79,6 +85,47 @@ async def metrics_ws(websocket: WebSocket, token: str = Query(default="")):
             await asyncio.sleep(PUSH_INTERVAL_SECONDS)
     except WebSocketDisconnect:
         pass
+
+
+EVENTS_QUEUE_POLL_SECONDS = 0.5
+
+
+@router.websocket("/ws/events")
+async def events_ws(websocket: WebSocket, token: str = Query(default="")):
+    """Live tail of core/events/. Every event is already durably
+    persisted by the time it reaches here (EventBus.emit() persists
+    before it publishes), so a client that reconnects after a gap should
+    backfill with GET /api/v1/events?before_id=... rather than expect
+    this socket to replay anything it missed -- this is a live feed, not
+    a queue with delivery guarantees."""
+    if token != _ACCESS_TOKEN:
+        await websocket.close(code=4401)
+        return
+
+    await websocket.accept()
+    sub_id, q = events_module.event_bus.subscribe()
+    try:
+        loop = asyncio.get_event_loop()
+        while True:
+            # queue.Queue.get() is blocking, so it runs off the event
+            # loop's thread (same run_in_executor pattern the
+            # agent-terminal pump below uses) -- a websocket that never
+            # sends anything must not stall this endpoint from noticing
+            # the client disconnected.
+            ev = await loop.run_in_executor(None, _poll_one, q)
+            if ev is not None:
+                await websocket.send_text(json.dumps(ev.to_dict()))
+    except WebSocketDisconnect:
+        pass
+    finally:
+        events_module.event_bus.unsubscribe(sub_id)
+
+
+def _poll_one(q: "queue.Queue"):
+    try:
+        return q.get(timeout=EVENTS_QUEUE_POLL_SECONDS)
+    except queue.Empty:
+        return None
 
 
 @router.websocket("/ws/agent-terminal/{agent_id}")

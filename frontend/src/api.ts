@@ -481,6 +481,47 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
+// ---- Structured event log (backend/core/events/) ----
+
+export interface EventSource {
+  system: string;
+  project_id: string | null;
+  agent_id: string | null;
+  session_id: string | null;
+  task_id: string | null;
+}
+
+export interface LogEvent {
+  id: number;
+  event_id: string;
+  event_type: string;
+  timestamp: string;
+  device_id: string | null;
+  runtime_id: number | null;
+  agent_id: number | null;
+  session_id: number | null;
+  source: EventSource;
+  metadata: Record<string, unknown>;
+}
+
+export interface EventTypeInfo {
+  event_type: string;
+  description: string;
+}
+
+export interface ListEventsParams {
+  /** An exact type ("runtime.started"), a comma-separated list, or a
+   * "runtime."-style prefix to match a whole category. */
+  eventType?: string;
+  runtimeId?: number;
+  agentId?: number;
+  sessionId?: number;
+  since?: string;
+  /** Pagination cursor: the smallest `id` already seen, to page further back. */
+  beforeId?: number;
+  limit?: number;
+}
+
 export const api = {
   bootstrapToken: () => request<{ access_token: string }>("/api/v1/auth/bootstrap-token"),
 
@@ -666,6 +707,20 @@ export const api = {
       body: JSON.stringify({ repo, command, confirmed: true }),
     }),
   getAgentInstall: (id: string) => request<AgentInstallJob>(`/api/v1/discover/agents/install/${id}`),
+
+  // ---- Structured event log ----
+  listEvents: (params: ListEventsParams = {}) => {
+    const qs = new URLSearchParams();
+    if (params.eventType) qs.set("event_type", params.eventType);
+    if (params.runtimeId != null) qs.set("runtime_id", String(params.runtimeId));
+    if (params.agentId != null) qs.set("agent_id", String(params.agentId));
+    if (params.sessionId != null) qs.set("session_id", String(params.sessionId));
+    if (params.since) qs.set("since", params.since);
+    if (params.beforeId != null) qs.set("before_id", String(params.beforeId));
+    qs.set("limit", String(params.limit ?? 100));
+    return request<LogEvent[]>(`/api/v1/events?${qs.toString()}`);
+  },
+  getEventTypes: () => request<EventTypeInfo[]>("/api/v1/events/types"),
 };
 
 /**
@@ -683,6 +738,30 @@ export function connectMetricsSocket(onMessage: (snapshot: HardwareSnapshot) => 
       onMessage(JSON.parse(event.data));
     } catch {
       // malformed frame -- drop it, next snapshot arrives in ~1.5s anyway
+    }
+  };
+
+  return () => socket.close();
+}
+
+/**
+ * Opens the live event-log WebSocket (backend/api/ws.py's /ws/events)
+ * and calls `onEvent` for every event as it's emitted. Every event this
+ * delivers is also already durably persisted by the time it arrives --
+ * see api.listEvents for the history view of the same stream -- so a
+ * consumer that reconnects after a gap should backfill with that rather
+ * than expect this socket to replay anything it missed.
+ */
+export function connectEventsSocket(onEvent: (event: LogEvent) => void): () => void {
+  const token = getStoredToken() ?? "";
+  const wsUrl = `${BASE_URL.replace("http", "ws")}/ws/events?token=${encodeURIComponent(token)}`;
+  const socket = new WebSocket(wsUrl);
+
+  socket.onmessage = (event) => {
+    try {
+      onEvent(JSON.parse(event.data));
+    } catch {
+      // malformed frame -- drop it, the next one is close behind
     }
   };
 

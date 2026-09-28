@@ -24,6 +24,7 @@ from ..core import authenticity
 from ..core import chat as chat_engine
 from ..core import comparison
 from ..core import connectivity
+from ..core import events
 from ..core import git_panel
 from ..core import models as model_manager
 from ..core import onboarding
@@ -226,6 +227,7 @@ def create_runtime(body: RuntimeCreate, db: Session = Depends(get_db_session)):
     db.commit()
     db.refresh(rt)
     storage_db.update_onboarding_state(db, first_runtime_configured=True)
+    events.emit(events.EventType.RUNTIME_REGISTERED, runtime_id=rt.id, metadata={"name": rt.name})
     return _runtime_to_dict(rt)
 
 
@@ -299,6 +301,12 @@ def delete_runtime(runtime_id: int, db: Session = Depends(get_db_session)):
     rt = _get_runtime_or_404(db, runtime_id)
     if rt.status in (RuntimeState.ONLINE.value, RuntimeState.STARTING.value):
         raise HTTPException(400, f"«{rt.name}» در حال اجراست — اول متوقفش کن.")
+    # Emitted BEFORE the delete, not after: an events row inserted with
+    # runtime_id=rt.id once the runtime is gone would violate the FK
+    # constraint immediately (foreign_keys=ON). Existing events that
+    # already reference this runtime are unaffected -- ON DELETE SET NULL,
+    # not CASCADE, keeps their history even once the runtime itself is gone.
+    events.emit(events.EventType.RUNTIME_REMOVED, runtime_id=rt.id, metadata={"name": rt.name})
     db.delete(rt)
     db.commit()
     return {"deleted": True}
@@ -420,6 +428,7 @@ def delete_model(model_id: int, db: Session = Depends(get_db_session)):
     unlinked_runtime_ids = [
         rt.id for rt in db.query(Runtime).filter(Runtime.model_id == model_id).all()
     ]
+    events.emit(events.EventType.MODEL_REMOVED, metadata={"model_id": model_id, "name": model.name})
     db.delete(model)
     db.commit()
     return {"deleted": True, "unlinked_runtime_ids": unlinked_runtime_ids}
@@ -480,6 +489,10 @@ def _run_verification(model_id: int) -> None:
             verification_status=result["status"],
             verification_checked_at=storage_db.utcnow_iso(),
             verification_details_json=result,
+        )
+        events.emit(
+            events.EventType.MODEL_VERIFICATION_COMPLETED,
+            metadata={"model_id": model_id, "status": result["status"]},
         )
     finally:
         db.close()
@@ -553,6 +566,7 @@ def create_agent(body: AgentCreate, db: Session = Depends(get_db_session)):
     db.commit()
     db.refresh(agent)
     storage_db.update_onboarding_state(db, first_agent_created=True)
+    events.emit(events.EventType.AGENT_CREATED, agent_id=agent.id, metadata={"name": agent.name})
     return _agent_to_dict(agent)
 
 
@@ -599,6 +613,10 @@ def delete_agent(agent_id: int, db: Session = Depends(get_db_session)):
     agent = db.get(Agent, agent_id)
     if agent is None:
         raise HTTPException(404, "agent not found")
+    # Emitted BEFORE the delete for the same FK reason as runtime removal
+    # above: an events row can't reference an agent_id that no longer
+    # exists at insert time (foreign_keys=ON).
+    events.emit(events.EventType.AGENT_DELETED, agent_id=agent.id, metadata={"name": agent.name})
     db.delete(agent)
     db.commit()
     return {"deleted": True}
@@ -679,8 +697,13 @@ def configure_agent(agent_id: int, body: AgentConfigureRequest, db: Session = De
 @router.post("/runtimes/{runtime_id}/agents/{agent_id}/attach")
 def attach_agent(runtime_id: int, agent_id: int, db: Session = Depends(get_db_session)):
     """Opens an active llm_agent_sessions link -- the event that makes
-    'Agent2 is now using LLM1' become true."""
+    'Agent2 is now using LLM1' become true. This one DB action is,
+    semantically, both a session starting AND that agent beginning to
+    operate through this runtime -- so it emits both session.started and
+    agent.started, rather than picking one."""
     link = storage_db.start_llm_agent_session(db, runtime_id, agent_id)
+    events.emit(events.EventType.SESSION_STARTED, runtime_id=runtime_id, agent_id=agent_id, session_id=link.id)
+    events.emit(events.EventType.AGENT_STARTED, runtime_id=runtime_id, agent_id=agent_id, session_id=link.id)
     return {"session_link_id": link.id, "started_at": link.started_at}
 
 
@@ -689,6 +712,12 @@ def detach_session(link_id: int, db: Session = Depends(get_db_session)):
     link = storage_db.end_llm_agent_session(db, link_id)
     if link is None:
         raise HTTPException(404, "session link not found")
+    events.emit(
+        events.EventType.SESSION_COMPLETED, runtime_id=link.runtime_id, agent_id=link.agent_id, session_id=link.id
+    )
+    events.emit(
+        events.EventType.AGENT_STOPPED, runtime_id=link.runtime_id, agent_id=link.agent_id, session_id=link.id
+    )
     return {"session_link_id": link.id, "ended_at": link.ended_at}
 
 
@@ -721,6 +750,77 @@ def usage_history(
         }
         for l in links
     ]
+
+
+# ---------------------------------------------------------------------
+# Structured event log (backend/core/events/) -- the same audit trail
+# GET /ws/events (api/ws.py) tails live. Read-only here: nothing under
+# /events ever writes -- see core/events/bus.py's EventBus for the one
+# place that does.
+# ---------------------------------------------------------------------
+
+def _event_to_dict(e) -> dict:
+    return {
+        "id": e.id,
+        "event_id": e.event_id,
+        "event_type": e.event_type,
+        "timestamp": e.timestamp,
+        "device_id": e.device_id,
+        "runtime_id": e.runtime_id,
+        "agent_id": e.agent_id,
+        "session_id": e.session_id,
+        "source": {
+            "system": e.source_system,
+            "project_id": e.source_project_id,
+            "agent_id": e.source_agent_id,
+            "session_id": e.source_session_id,
+            "task_id": e.source_task_id,
+        },
+        "metadata": e.metadata_json,
+    }
+
+
+@router.get("/events")
+def list_events(
+    event_type: Optional[str] = Query(
+        default=None,
+        description="An exact type ('runtime.started'), a comma-separated list, or a "
+        "prefix ending in a dot ('runtime.') to match a whole category.",
+    ),
+    runtime_id: Optional[int] = None,
+    agent_id: Optional[int] = None,
+    session_id: Optional[int] = None,
+    since: Optional[str] = Query(default=None, description="ISO-8601 timestamp lower bound (inclusive)."),
+    before_id: Optional[int] = Query(default=None, description="Pagination cursor: the smallest id seen so far."),
+    limit: int = Query(default=100, le=500),
+    db: Session = Depends(get_db_session),
+):
+    event_types = None
+    type_prefix = None
+    if event_type:
+        if event_type.endswith("."):
+            type_prefix = event_type
+        else:
+            event_types = [t.strip() for t in event_type.split(",") if t.strip()]
+    rows = storage_db.list_events(
+        db,
+        event_types=event_types,
+        type_prefix=type_prefix,
+        runtime_id=runtime_id,
+        agent_id=agent_id,
+        session_id=session_id,
+        since=since,
+        before_id=before_id,
+        limit=limit,
+    )
+    return [_event_to_dict(e) for e in rows]
+
+
+@router.get("/events/types")
+def get_event_types():
+    """The full taxonomy with a short description each -- backs a filter
+    dropdown in the frontend without hardcoding the list a second time."""
+    return events.describe_all()
 
 
 # ---------------------------------------------------------------------
@@ -896,11 +996,23 @@ def send_chat_message(chat_id: int, body: SendMessageRequest, db: Session = Depe
         {"role": m.role, "content": m.content} for m in storage_db.get_chat_messages(db, chat_id)
     ]
 
+    events.emit(
+        events.EventType.INFERENCE_STARTED,
+        runtime_id=chat.runtime_id,
+        agent_id=chat.agent_id,
+        metadata={"chat_id": chat_id},
+    )
     try:
         result = chat_engine.send_chat_completion(
             status.endpoint, history, temperature=body.temperature, max_tokens=body.max_tokens
         )
     except chat_engine.ChatCompletionError as exc:
+        events.emit(
+            events.EventType.INFERENCE_FAILED,
+            runtime_id=chat.runtime_id,
+            agent_id=chat.agent_id,
+            metadata={"chat_id": chat_id, "error": str(exc)},
+        )
         raise HTTPException(502, str(exc))
 
     assistant_message = storage_db.add_chat_message(
@@ -940,6 +1052,18 @@ def send_chat_message(chat_id: int, body: SendMessageRequest, db: Session = Depe
         session_link_id=active_link.id if active_link is not None else None,
     )
 
+    events.emit(
+        events.EventType.INFERENCE_COMPLETED,
+        runtime_id=chat.runtime_id,
+        agent_id=chat.agent_id,
+        session_id=active_link.id if active_link is not None else None,
+        metadata={
+            "chat_id": chat_id,
+            "prompt_tokens": result["prompt_tokens"],
+            "completion_tokens": result["completion_tokens"],
+            "latency_ms": result["latency_ms"],
+        },
+    )
     return _message_to_dict(assistant_message)
 
 

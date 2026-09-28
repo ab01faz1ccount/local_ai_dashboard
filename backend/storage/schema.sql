@@ -277,3 +277,34 @@ CREATE TRIGGER IF NOT EXISTS chat_messages_au AFTER UPDATE ON chat_messages BEGI
     INSERT INTO chat_messages_fts(chat_messages_fts, rowid, content) VALUES('delete', old.id, old.content);
     INSERT INTO chat_messages_fts(rowid, content) VALUES (new.id, new.content);
 END;
+
+-- ---------------------------------------------------------------------
+-- Structured event log (see backend/core/events/). Append-only: written
+-- only by EventBus._persist(), read by GET /api/v1/events and /ws/events.
+-- ON DELETE SET NULL (not CASCADE) on runtime_id/agent_id/session_id --
+-- deleting a runtime should not erase the history of events that
+-- happened while it existed.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS events (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id            TEXT NOT NULL UNIQUE,
+    event_type          TEXT NOT NULL,
+    timestamp           TEXT NOT NULL DEFAULT (STRFTIME('%Y-%m-%dT%H:%M:%fZ','now')),
+
+    device_id           TEXT,
+    runtime_id          INTEGER REFERENCES runtimes(id) ON DELETE SET NULL,
+    agent_id            INTEGER REFERENCES agents(id) ON DELETE SET NULL,
+    session_id          INTEGER REFERENCES llm_agent_sessions(id) ON DELETE SET NULL,
+
+    source_system       TEXT NOT NULL DEFAULT 'local',
+    source_project_id   TEXT,
+    source_agent_id     TEXT,
+    source_session_id   TEXT,
+    source_task_id      TEXT,
+
+    metadata_json       TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_type_id ON events(event_type, id);
+CREATE INDEX IF NOT EXISTS idx_events_runtime_id ON events(runtime_id, id);
+CREATE INDEX IF NOT EXISTS idx_events_agent_id ON events(agent_id, id);

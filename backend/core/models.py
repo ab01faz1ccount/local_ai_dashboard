@@ -16,6 +16,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from . import events
 from ..storage.db import MLModel
 
 
@@ -46,6 +47,7 @@ def scan_models_folder(db: Session, folder: str) -> list[MLModel]:
     found = list(folder_path.glob("*.gguf"))
     existing_by_path = {m.file_path: m for m in db.query(MLModel).all()}
 
+    newly_added: list[MLModel] = []
     for f in found:
         file_path = str(f.resolve())
         size = f.stat().st_size
@@ -54,9 +56,21 @@ def scan_models_folder(db: Session, folder: str) -> list[MLModel]:
             if model.file_size_bytes != size:
                 model.file_size_bytes = size
         else:
-            db.add(MLModel(name=f.stem, file_path=file_path, file_size_bytes=size))
+            model = MLModel(name=f.stem, file_path=file_path, file_size_bytes=size)
+            db.add(model)
+            newly_added.append(model)
 
     db.commit()
+    # Emitted only for genuinely new rows -- this function returns EVERY
+    # model in the whole catalog (see its own return statement below), so
+    # emitting from the caller off that return value would fire a
+    # model.registered for every pre-existing model on every re-scan.
+    for model in newly_added:
+        db.refresh(model)
+        events.emit(
+            events.EventType.MODEL_REGISTERED,
+            metadata={"model_id": model.id, "name": model.name, "file_path": model.file_path, "via": "scan"},
+        )
     return db.query(MLModel).all()
 
 
@@ -109,7 +123,8 @@ def register_model_file(
 
     file_path = str(resolved)
     model = db.query(MLModel).filter(MLModel.file_path == file_path).first()
-    if model is None:
+    is_new = model is None
+    if is_new:
         model = MLModel(name=stem, file_path=file_path, file_size_bytes=size)
         db.add(model)
     else:
@@ -126,4 +141,9 @@ def register_model_file(
 
     db.commit()
     db.refresh(model)
+    if is_new:
+        events.emit(
+            events.EventType.MODEL_REGISTERED,
+            metadata={"model_id": model.id, "name": model.name, "file_path": model.file_path, "via": "register"},
+        )
     return model
