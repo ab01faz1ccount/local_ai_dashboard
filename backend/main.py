@@ -28,8 +28,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api.discovery import router as discovery_router
 from .api.http import require_token
 from .api.http import router as http_router
+from .api.mcp import router as mcp_router
+from .api.permissions import router as permissions_router
 from .api.ws import router as ws_router
+from .core.mcp import mcp_manager
 from .core.security import get_allowed_origins, get_or_create_access_token
+from .storage import db as storage_db
 from .storage.db import init_db
 
 app = FastAPI(title="Local AI Control Center", version="0.1.0")
@@ -53,6 +57,16 @@ app.add_middleware(
 @app.on_event("startup")
 def _on_startup() -> None:
     init_db()
+    # Nothing is live at process start, so a CONNECTED/CONNECTING MCP row
+    # left over from the previous run is stale -- reset it.
+    with storage_db.SessionLocal() as db:
+        mcp_manager.reset_stale_statuses(db)
+
+
+@app.on_event("shutdown")
+def _on_shutdown() -> None:
+    # Terminates any stdio MCP server child processes instead of orphaning them.
+    mcp_manager.shutdown()
 
 
 @app.get("/api/v1/auth/bootstrap-token")
@@ -86,6 +100,8 @@ def bootstrap_token() -> dict:
 # either.
 app.include_router(http_router, dependencies=[Depends(require_token)])
 app.include_router(discovery_router)
+app.include_router(mcp_router)
+app.include_router(permissions_router)
 app.include_router(ws_router)
 
 

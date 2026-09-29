@@ -35,6 +35,7 @@ from datetime import datetime, timezone
 from typing import Optional, Iterable
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Float,
     ForeignKey,
@@ -471,6 +472,116 @@ class Event(Base):
         Index("idx_events_type_id", "event_type", "id"),
         Index("idx_events_runtime_id", "runtime_id", "id"),
         Index("idx_events_agent_id", "agent_id", "id"),
+    )
+
+
+class McpServer(Base):
+    """One configured MCP (Model Context Protocol) server -- the durable
+    half of core/mcp/manager.py, same split as `Runtime` vs. its live
+    engine: this row is config + last-known status, the live client
+    session only exists in memory while this process runs.
+
+    `env_json` / `headers_json` routinely hold API keys, so the API layer
+    (api/mcp.py) NEVER returns their values -- only the key names. Stored
+    as-is in the local SQLite file, same trust boundary as the access
+    token in local_config.json.
+
+    `name` is unique so a server can be referred to unambiguously in
+    events and, later, in the Tool Registry. `source_system/project_id/
+    agent_id/session_id` are the same Synapse-ready columns every other
+    top-level entity carries.
+    """
+
+    __tablename__ = "mcp_servers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    transport: Mapped[str] = mapped_column(String, nullable=False, default="stdio")
+    # stdio
+    command: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    args_json: Mapped[dict] = mapped_column(JSONText, default=dict)  # {"args": [...]}; JSONText only round-trips dicts
+    env_json: Mapped[dict] = mapped_column(JSONText, default=dict)
+    # http / sse
+    url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    headers_json: Mapped[dict] = mapped_column(JSONText, default=dict)
+
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String, default="DISCONNECTED")
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    tools_count: Mapped[int] = mapped_column(Integer, default=0)
+    server_info_json: Mapped[dict] = mapped_column(JSONText, default=dict)
+
+    source_system: Mapped[str] = mapped_column(String, default="local")
+    project_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    agent_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    session_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    created_at: Mapped[str] = mapped_column(String, default=_utcnow_iso)
+    updated_at: Mapped[str] = mapped_column(String, default=_utcnow_iso, onupdate=_utcnow_iso)
+
+    __table_args__ = (
+        CheckConstraint("transport IN ('stdio','http','sse')", name="ck_mcp_transport"),
+        CheckConstraint("status IN ('DISCONNECTED','CONNECTING','CONNECTED','ERROR')", name="ck_mcp_status"),
+    )
+
+
+class PermissionGrant(Base):
+    """A recorded permission decision (master build prompt section 20) --
+    the durable half of core/permissions/engine.py's live request/response
+    flow. A row here is either a standing grant that future checks can
+    reuse (allow_session / allow_always, `expires_at IS NULL`) or a
+    closed-out record of a one-off decision (allow_once / deny,
+    `expires_at` set to `granted_at` -- already expired the moment it's
+    written, so it can never silently auto-apply again but still shows up
+    in a history/audit view).
+
+    `scope_type`/`scope_key` are deliberately generic strings rather than
+    a foreign key to any one table: today the only caller is
+    core/mcp/manager.py's tool listings (`mcp_server`: the server's id as
+    a string; `mcp_tool`: "<server_id>:<tool name>"), but the engine
+    itself has no MCP-specific code, so a future Tool Registry entry (or
+    a local-shell tool, etc.) can mint its own scope kind without a
+    migration.
+
+    `session_id` uses ON DELETE SET NULL like Event -- deleting a session
+    should not erase the history of what was granted during it, but an
+    orphaned allow_session row (session_id NULL) can never match a real
+    session again, so it's inert rather than dangerous.
+    """
+
+    __tablename__ = "permission_grants"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    scope_type: Mapped[str] = mapped_column(String, nullable=False)
+    scope_key: Mapped[str] = mapped_column(String, nullable=False)
+    risk_level: Mapped[str] = mapped_column(String, nullable=False)
+    decision: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    agent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("agents.id", ondelete="SET NULL"), nullable=True)
+    session_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("llm_agent_sessions.id", ondelete="SET NULL"), nullable=True
+    )
+
+    granted_at: Mapped[str] = mapped_column(String, default=_utcnow_iso)
+    # NULL = standing grant, still in force. Non-NULL = closed (either a
+    # one-off allow_once/deny record, or a standing grant that was
+    # revoked / superseded -- both look the same to a validity check).
+    expires_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    source_system: Mapped[str] = mapped_column(String, default="local")
+    project_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("scope_type IN ('mcp_server','mcp_tool')", name="ck_permission_scope_type"),
+        CheckConstraint("risk_level IN ('LOW','MEDIUM','HIGH','CRITICAL')", name="ck_permission_risk_level"),
+        CheckConstraint(
+            "decision IN ('allow_once','allow_session','allow_always','deny')", name="ck_permission_decision"
+        ),
+        Index("idx_permission_grants_scope", "scope_type", "scope_key", "id"),
     )
 
 

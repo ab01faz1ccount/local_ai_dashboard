@@ -3,6 +3,9 @@ import { ApiError, api, getStoredToken, setStoredToken } from "./api";
 import { ChatView } from "./ChatView";
 import { Dashboard } from "./Dashboard";
 import { LogsPage } from "./LogsPage";
+import { McpPage } from "./McpPage";
+import { PermissionPrompt } from "./components/PermissionPrompt";
+import { PermissionsPage } from "./PermissionsPage";
 import { ModelsPage } from "./ModelsPage";
 import { OnboardingWizard } from "./OnboardingWizard";
 import { ProjectsPage } from "./ProjectsPage";
@@ -97,7 +100,7 @@ export default function App() {
   return <MainShell />;
 }
 
-type View = "dashboard" | "models" | "projects" | "chats" | "logs" | "setup" | "settings";
+type View = "dashboard" | "models" | "projects" | "chats" | "mcp" | "permissions" | "logs" | "setup" | "settings";
 
 function MainShell() {
   const [view, setView] = useState<View>("dashboard");
@@ -125,6 +128,12 @@ function MainShell() {
           <button className={view === "chats" ? "active" : ""} onClick={() => setView("chats")}>
             Chats
           </button>
+          <button className={view === "mcp" ? "active" : ""} onClick={() => setView("mcp")}>
+            MCP
+          </button>
+          <button className={view === "permissions" ? "active" : ""} onClick={() => setView("permissions")}>
+            Permissions
+          </button>
           <button className={view === "logs" ? "active" : ""} onClick={() => setView("logs")}>
             Logs
           </button>
@@ -141,11 +150,14 @@ function MainShell() {
       {view === "models" && <ModelsPage />}
       {view === "projects" && <ProjectsPage onOpenChat={openChat} />}
       {view === "chats" && <ChatView initialChatId={pendingChatId} />}
+      {view === "mcp" && <McpPage />}
+      {view === "permissions" && <PermissionsPage />}
       {view === "logs" && <LogsPage />}
       {view === "setup" && (
         <OnboardingWizard onComplete={() => setView("dashboard")} onCancel={() => setView("dashboard")} />
       )}
       {view === "settings" && <SettingsPage />}
+      <PermissionPrompt />
     </div>
   );
 }

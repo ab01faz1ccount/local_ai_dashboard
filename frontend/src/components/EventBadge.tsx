@@ -18,6 +18,7 @@ const SUFFIX_TONE: Record<string, Tone> = {
   completed: "ok",
   loaded: "ok",
   registered: "ok",
+  server_registered: "ok",
   created: "ok",
   verified: "ok",
   verification_completed: "ok",
@@ -28,10 +29,12 @@ const SUFFIX_TONE: Record<string, Tone> = {
   unloaded: "muted",
   deleted: "muted",
   removed: "muted",
+  server_removed: "muted",
   disconnected: "muted",
 
   crashed: "bad",
   failed: "bad",
+  connect_failed: "bad",
   denied: "bad",
 
   requested: "pending",

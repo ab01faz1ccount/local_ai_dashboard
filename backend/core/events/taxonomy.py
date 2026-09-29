@@ -24,11 +24,11 @@ without): the *.registered/*.removed/*.created/*.deleted catalog-CRUD
 events, and model.verification_completed. Each is commented at its
 definition so it's obvious it's an addition, not a spec citation.
 
-tool.*, mcp.*, and permission.* are declared now but nothing emits them
-yet -- there is no Tool Registry, MCP Manager, or Permission Engine in
-this codebase yet (see CHANGES_events.md's gap analysis). Declaring them
-here means that future work only has to call `events.emit(...)`, not
-also touch this taxonomy.
+tool.* is declared now but nothing emits it yet -- there is no Tool
+Registry in this codebase yet. mcp.* is emitted by core/mcp/manager.py;
+permission.* is emitted by core/permissions/engine.py. Declaring an
+event type here means future work only has to call `events.emit(...)`,
+not also touch this taxonomy.
 """
 
 from __future__ import annotations
@@ -78,11 +78,17 @@ class EventType(str, Enum):
     TOOL_COMPLETED = "tool.completed"
     TOOL_FAILED = "tool.failed"
 
-    # -- reserved: no emitter yet (MCP Manager doesn't exist) --
+    # -- MCP Manager (core/mcp/manager.py) --
     MCP_CONNECTED = "mcp.connected"
     MCP_DISCONNECTED = "mcp.disconnected"
+    # extensions: a connect attempt that never got as far as "connected"
+    # is NOT an mcp.disconnected (nothing was connected), and the catalog
+    # CRUD events mirror runtime/model/agent's.
+    MCP_CONNECT_FAILED = "mcp.connect_failed"
+    MCP_SERVER_REGISTERED = "mcp.server_registered"
+    MCP_SERVER_REMOVED = "mcp.server_removed"
 
-    # -- reserved: no emitter yet (Permission Engine doesn't exist) --
+    # -- Permission Engine (core/permissions/engine.py) --
     PERMISSION_REQUESTED = "permission.requested"
     PERMISSION_APPROVED = "permission.approved"
     PERMISSION_DENIED = "permission.denied"
@@ -115,11 +121,14 @@ EVENT_TYPE_DESCRIPTIONS: dict[EventType, str] = {
     EventType.TOOL_CALLED: "(reserved -- no Tool Registry yet) A tool call started.",
     EventType.TOOL_COMPLETED: "(reserved -- no Tool Registry yet) A tool call finished.",
     EventType.TOOL_FAILED: "(reserved -- no Tool Registry yet) A tool call failed.",
-    EventType.MCP_CONNECTED: "(reserved -- no MCP Manager yet) An MCP server connected.",
-    EventType.MCP_DISCONNECTED: "(reserved -- no MCP Manager yet) An MCP server disconnected.",
-    EventType.PERMISSION_REQUESTED: "(reserved -- no Permission Engine yet) A permission was requested.",
-    EventType.PERMISSION_APPROVED: "(reserved -- no Permission Engine yet) A permission was approved.",
-    EventType.PERMISSION_DENIED: "(reserved -- no Permission Engine yet) A permission was denied.",
+    EventType.MCP_CONNECTED: "An MCP server connected.",
+    EventType.MCP_DISCONNECTED: "An MCP server disconnected (requested, or the connection was lost).",
+    EventType.MCP_CONNECT_FAILED: "A connection attempt to an MCP server failed.",
+    EventType.MCP_SERVER_REGISTERED: "An MCP server configuration was added.",
+    EventType.MCP_SERVER_REMOVED: "An MCP server configuration was deleted.",
+    EventType.PERMISSION_REQUESTED: "A permission was requested and is waiting on a decision.",
+    EventType.PERMISSION_APPROVED: "A permission request was approved (once, for the session, or always).",
+    EventType.PERMISSION_DENIED: "A permission request was denied, or timed out unanswered.",
 }
 
 

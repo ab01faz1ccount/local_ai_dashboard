@@ -522,6 +522,107 @@ export interface ListEventsParams {
   limit?: number;
 }
 
+// ---- MCP servers (backend/core/mcp/) ----
+
+export type McpTransport = "stdio" | "http" | "sse";
+export type McpStatusName = "DISCONNECTED" | "CONNECTING" | "CONNECTED" | "ERROR";
+
+export interface McpServer {
+  id: number;
+  name: string;
+  description: string | null;
+  transport: McpTransport;
+  command: string | null;
+  args: string[];
+  /** Names only -- env values are write-only and never returned by the backend. */
+  env_keys: string[];
+  url: string | null;
+  /** Names only, same as env_keys. */
+  header_keys: string[];
+  is_remote: boolean;
+  enabled: boolean;
+  status: McpStatusName;
+  last_error: string | null;
+  tools_count: number;
+  server_info: { name?: string | null; version?: string | null; protocol_version?: string | null };
+  source_system: string;
+  project_id: string | null;
+  agent_id: string | null;
+  session_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface McpTool {
+  name: string;
+  title?: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+  annotations?: Record<string, unknown>;
+}
+
+export interface McpLifecycleResult {
+  state: McpStatusName;
+  tools_count: number;
+  error: string | null;
+  server_info: McpServer["server_info"];
+  server: McpServer;
+}
+
+/** Create body: full config. Update body: any subset; for `env`/`headers` a
+ * key set to `null` deletes it and absent keys are left untouched. */
+export interface McpServerPayload {
+  name?: string;
+  description?: string | null;
+  transport?: McpTransport;
+  command?: string | null;
+  args?: string[];
+  env?: Record<string, string | null>;
+  url?: string | null;
+  headers?: Record<string, string | null>;
+  enabled?: boolean;
+}
+
+// ---- Permission Engine (backend/core/permissions/) ----
+
+export type PermissionScopeType = "mcp_server" | "mcp_tool";
+export type RiskLevel = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+export type PermissionDecision = "allow_once" | "allow_session" | "allow_always" | "deny";
+
+export interface PendingPermissionRequest {
+  id: string;
+  scope_type: PermissionScopeType;
+  scope_key: string;
+  risk_level: RiskLevel;
+  session_id: number | null;
+  agent_id: number | null;
+  description: string | null;
+  requested_at: string;
+}
+
+export interface PermissionGrant {
+  id: number;
+  scope_type: PermissionScopeType;
+  scope_key: string;
+  risk_level: RiskLevel;
+  decision: PermissionDecision;
+  description: string | null;
+  agent_id: number | null;
+  session_id: number | null;
+  granted_at: string;
+  expires_at: string | null;
+  /** true when this grant still auto-applies (allow_session/allow_always, not yet revoked). */
+  active: boolean;
+}
+
+export interface CheckPermissionResult {
+  decision: "allow" | "deny";
+  source: "existing_grant" | "live_decision" | "timeout";
+  grant_id: number | null;
+  request_id: string | null;
+  decision_kind?: PermissionDecision;
+}
+
 export const api = {
   bootstrapToken: () => request<{ access_token: string }>("/api/v1/auth/bootstrap-token"),
 
@@ -721,6 +822,45 @@ export const api = {
     return request<LogEvent[]>(`/api/v1/events?${qs.toString()}`);
   },
   getEventTypes: () => request<EventTypeInfo[]>("/api/v1/events/types"),
+
+  // ---- MCP servers ----
+  listMcpServers: () => request<McpServer[]>("/api/v1/mcp/servers"),
+  createMcpServer: (body: McpServerPayload & { name: string }) =>
+    request<McpServer>("/api/v1/mcp/servers", { method: "POST", body: JSON.stringify(body) }),
+  updateMcpServer: (id: number, body: McpServerPayload) =>
+    request<McpServer>(`/api/v1/mcp/servers/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteMcpServer: (id: number) => request<{ deleted: boolean }>(`/api/v1/mcp/servers/${id}`, { method: "DELETE" }),
+  connectMcpServer: (id: number) => request<McpLifecycleResult>(`/api/v1/mcp/servers/${id}/connect`, { method: "POST" }),
+  disconnectMcpServer: (id: number) =>
+    request<McpLifecycleResult>(`/api/v1/mcp/servers/${id}/disconnect`, { method: "POST" }),
+  listMcpServerTools: (id: number) => request<{ server_id: number; tools: McpTool[] }>(`/api/v1/mcp/servers/${id}/tools`),
+
+  // ---- Permission Engine ----
+  /** Blocks server-side until a decision is made or `timeoutSeconds` elapses. */
+  checkPermission: (body: {
+    scope_type: PermissionScopeType;
+    scope_key: string;
+    risk_level: RiskLevel;
+    session_id?: number;
+    agent_id?: number;
+    description?: string;
+    timeout_seconds?: number;
+  }) => request<CheckPermissionResult>("/api/v1/permissions/check", { method: "POST", body: JSON.stringify(body) }),
+  listPendingPermissions: () => request<PendingPermissionRequest[]>("/api/v1/permissions/pending"),
+  resolvePermissionRequest: (requestId: string, decision: PermissionDecision) =>
+    request<{ resolved: boolean }>(`/api/v1/permissions/requests/${requestId}/resolve`, {
+      method: "POST",
+      body: JSON.stringify({ decision }),
+    }),
+  listPermissionGrants: (opts: { scopeType?: PermissionScopeType; scopeKey?: string; activeOnly?: boolean } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.scopeType) params.set("scope_type", opts.scopeType);
+    if (opts.scopeKey) params.set("scope_key", opts.scopeKey);
+    if (opts.activeOnly) params.set("active_only", "true");
+    const qs = params.toString();
+    return request<PermissionGrant[]>(`/api/v1/permissions/grants${qs ? `?${qs}` : ""}`);
+  },
+  revokePermissionGrant: (id: number) => request<PermissionGrant>(`/api/v1/permissions/grants/${id}`, { method: "DELETE" }),
 };
 
 /**
