@@ -739,6 +739,51 @@ select {
   border: 1px solid var(--border);
 }
 
+.chat-bubble.tool {
+  align-self: flex-start;
+  background: var(--surface-raised);
+  border: 1px dashed var(--border-strong);
+  max-width: 85%;
+}
+
+.tool-result-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+
+.tool-result-content {
+  font-size: 12px;
+  color: var(--text-muted);
+  max-height: 200px;
+  overflow: auto;
+}
+
+.tool-result-error .mono,
+.tool-result-denied .mono {
+  color: var(--status-error);
+}
+
+.tool-calls-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.agent-tools-panel {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+
 .chat-bubble-meta {
   font-family: var(--font-mono);
   font-size: 10px;

@@ -43,6 +43,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     create_engine,
     event,
     text,
@@ -393,6 +394,20 @@ class Chat(Base):
 
 
 class ChatMessage(Base):
+    """A single turn. `role='tool'` (added alongside the agent loop --
+    see `_migrate_chat_messages_table` below for the constraint-rebuild
+    that lets an existing local DB accept it) holds one tool's result;
+    `tool_meta_json` carries whatever role-specific bookkeeping that
+    needs, kept as one flexible JSON bag rather than five mostly-empty
+    columns, same reasoning as `config_json` elsewhere in this file:
+      - on an 'assistant' message: {"calls": [{"id","name","arguments"}]}
+        for each tool call the model asked for in this turn
+      - on a 'tool' message: {"call_id","name","mcp_server_id","status"
+        ("ok"/"error"/"denied"),"risk_level","decision"} describing which
+        call this answers and how the Permission Engine and the MCP call
+        itself resolved
+    """
+
     __tablename__ = "chat_messages"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -403,11 +418,12 @@ class ChatMessage(Base):
     completion_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     latency_ms: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     created_at: Mapped[str] = mapped_column(String, default=_utcnow_iso)
+    tool_meta_json: Mapped[dict] = mapped_column(JSONText, default=dict)
 
     chat: Mapped["Chat"] = relationship(back_populates="messages")
 
     __table_args__ = (
-        CheckConstraint("role IN ('user','assistant','system')", name="ck_message_role"),
+        CheckConstraint("role IN ('user','assistant','system','tool')", name="ck_message_role"),
         Index("idx_chat_messages_chat", "chat_id", "created_at"),
     )
 
@@ -524,6 +540,42 @@ class McpServer(Base):
     __table_args__ = (
         CheckConstraint("transport IN ('stdio','http','sse')", name="ck_mcp_transport"),
         CheckConstraint("status IN ('DISCONNECTED','CONNECTING','CONNECTED','ERROR')", name="ck_mcp_status"),
+    )
+
+
+class Tool(Base):
+    """The Tool Registry (master build prompt, Phase 4/Tool Registry): a
+    cached copy of one MCP server's tool list, kept in sync by
+    core/tools/registry.py whenever core/mcp/manager.py connects to that
+    server or its tool list is refreshed. This table -- not a live MCP
+    call -- is what core/agent_loop.py reads to decide what to offer the
+    model, so a tool stays choosable (and reviewable on a settings page)
+    even for the moment between "server marked CONNECTED" and "this
+    row's `risk_level` recomputed from its annotations."
+
+    `enabled` is the one field this table owns rather than mirrors: a
+    user can turn a specific tool off (leaving the rest of that server's
+    tools available) without touching the server connection itself.
+    Deleting the owning McpServer cascades here, since a cached
+    definition for a server that no longer exists is not useful data.
+    """
+
+    __tablename__ = "tools"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mcp_server_id: Mapped[int] = mapped_column(ForeignKey("mcp_servers.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    input_schema_json: Mapped[dict] = mapped_column(JSONText, default=dict)
+    annotations_json: Mapped[dict] = mapped_column(JSONText, default=dict)
+    risk_level: Mapped[str] = mapped_column(String, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    updated_at: Mapped[str] = mapped_column(String, default=_utcnow_iso, onupdate=_utcnow_iso)
+
+    __table_args__ = (
+        UniqueConstraint("mcp_server_id", "name", name="uq_tools_server_name"),
+        CheckConstraint("risk_level IN ('LOW','MEDIUM','HIGH','CRITICAL')", name="ck_tools_risk_level"),
+        Index("idx_tools_server", "mcp_server_id"),
     )
 
 
@@ -721,6 +773,46 @@ def _migrate_agents_table(engine_) -> None:
                 conn.rollback()
 
 
+def _migrate_chat_messages_table(engine_) -> None:
+    """Two things an existing (pre-agent-loop) `chat_messages` table
+    needs that a fresh `create_all` already gets right: the
+    `tool_meta_json` column, and a `role` CHECK constraint that accepts
+    'tool'. SQLite can't ALTER a CHECK constraint in place, so this
+    rebuilds the table -- but only when the stored constraint text
+    (read back from sqlite_master) is still the pre-tool-calling one;
+    on a fresh table, or one already migrated, it's a no-op."""
+    with engine_.connect() as conn:
+        try:
+            conn.execute(text("ALTER TABLE chat_messages ADD COLUMN tool_meta_json TEXT"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+        row = conn.execute(
+            text("SELECT sql FROM sqlite_master WHERE type='table' AND name='chat_messages'")
+        ).fetchone()
+        if row is None or row[0] is None or "'tool'" in row[0]:
+            return
+
+        conn.execute(text("DROP TABLE IF EXISTS chat_messages_old"))
+        conn.execute(text("ALTER TABLE chat_messages RENAME TO chat_messages_old"))
+        conn.commit()
+
+    Base.metadata.create_all(engine_, tables=[ChatMessage.__table__])
+
+    with engine_.connect() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO chat_messages (id, chat_id, role, content, prompt_tokens, completion_tokens, "
+                "latency_ms, created_at, tool_meta_json) "
+                "SELECT id, chat_id, role, content, prompt_tokens, completion_tokens, latency_ms, created_at, "
+                "tool_meta_json FROM chat_messages_old"
+            )
+        )
+        conn.execute(text("DROP TABLE chat_messages_old"))
+        conn.commit()
+
+
 def init_db(engine_=None) -> None:
     """Create all tables + seed the singleton onboarding row."""
     global FTS5_AVAILABLE
@@ -729,6 +821,7 @@ def init_db(engine_=None) -> None:
     _migrate_models_table(engine_)
     _migrate_request_logs_table(engine_)
     _migrate_agents_table(engine_)
+    _migrate_chat_messages_table(engine_)
     FTS5_AVAILABLE = _setup_fts(engine_)
     with SessionLocal() as db:
         if db.get(OnboardingState, 1) is None:
@@ -1081,6 +1174,7 @@ def add_chat_message(
     prompt_tokens: Optional[int] = None,
     completion_tokens: Optional[int] = None,
     latency_ms: Optional[float] = None,
+    tool_meta: Optional[dict] = None,
 ) -> ChatMessage:
     message = ChatMessage(
         chat_id=chat_id,
@@ -1089,6 +1183,7 @@ def add_chat_message(
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
         latency_ms=latency_ms,
+        tool_meta_json=tool_meta or {},
     )
     db.add(message)
 

@@ -30,6 +30,7 @@ from .api.http import require_token
 from .api.http import router as http_router
 from .api.mcp import router as mcp_router
 from .api.permissions import router as permissions_router
+from .api.tools import router as tools_router
 from .api.ws import router as ws_router
 from .core.mcp import mcp_manager
 from .core.security import get_allowed_origins, get_or_create_access_token
@@ -102,6 +103,7 @@ app.include_router(http_router, dependencies=[Depends(require_token)])
 app.include_router(discovery_router)
 app.include_router(mcp_router)
 app.include_router(permissions_router)
+app.include_router(tools_router)
 app.include_router(ws_router)
 
 

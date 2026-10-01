@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from ..core import agent_loop
 from ..core import agents as agent_backends
 from ..core import authenticity
 from ..core import chat as chat_engine
@@ -894,6 +895,7 @@ def _message_to_dict(m) -> dict:
         "completion_tokens": m.completion_tokens,
         "latency_ms": m.latency_ms,
         "created_at": m.created_at,
+        "tool_meta": m.tool_meta_json or {},
     }
 
 
@@ -988,83 +990,20 @@ def send_chat_message(chat_id: int, body: SendMessageRequest, db: Session = Depe
     if status.state != RuntimeState.ONLINE or not status.endpoint:
         raise HTTPException(409, f"runtime is not online (state: {status.state.value})")
 
-    # Store the user's message first: if the completion call below fails,
-    # the user's side of the conversation is still saved rather than lost.
+    # Store the user's message first: if the turn below fails partway
+    # through, the user's side of the conversation -- and anything the
+    # agent loop already wrote (earlier tool steps) -- is still saved
+    # rather than lost.
     storage_db.add_chat_message(db, chat_id, role="user", content=body.content)
 
-    history = [
-        {"role": m.role, "content": m.content} for m in storage_db.get_chat_messages(db, chat_id)
-    ]
-
-    events.emit(
-        events.EventType.INFERENCE_STARTED,
-        runtime_id=chat.runtime_id,
-        agent_id=chat.agent_id,
-        metadata={"chat_id": chat_id},
-    )
     try:
-        result = chat_engine.send_chat_completion(
-            status.endpoint, history, temperature=body.temperature, max_tokens=body.max_tokens
+        written = agent_loop.run_agent_turn(
+            db, chat, status.endpoint, temperature=body.temperature, max_tokens=body.max_tokens
         )
     except chat_engine.ChatCompletionError as exc:
-        events.emit(
-            events.EventType.INFERENCE_FAILED,
-            runtime_id=chat.runtime_id,
-            agent_id=chat.agent_id,
-            metadata={"chat_id": chat_id, "error": str(exc)},
-        )
         raise HTTPException(502, str(exc))
 
-    assistant_message = storage_db.add_chat_message(
-        db,
-        chat_id,
-        role="assistant",
-        content=result["content"],
-        prompt_tokens=result["prompt_tokens"],
-        completion_tokens=result["completion_tokens"],
-        latency_ms=result["latency_ms"],
-    )
-
-    # Always log the request (this used to only happen when the chat had
-    # an agent with an active session link, which meant plain chats --
-    # the common case for direct, no-agent use of the app -- never showed
-    # up in "real-world performance" or per-project usage numbers at all).
-    # `chat_id` is what lets a project's hardware usage be estimated
-    # later (core/project_usage.py) from which runtimes its chats
-    # actually used.
-    active_link = None
-    if chat.agent_id is not None:
-        active_link = storage_db.get_active_session_link(db, chat.runtime_id, chat.agent_id)
-
-    tokens_per_sec = None
-    if result["completion_tokens"] and result["latency_ms"]:
-        tokens_per_sec = result["completion_tokens"] / (result["latency_ms"] / 1000)
-
-    storage_db.record_request(
-        db,
-        runtime_id=chat.runtime_id,
-        agent_id=chat.agent_id,
-        chat_id=chat_id,
-        prompt_tokens=result["prompt_tokens"] or 0,
-        completion_tokens=result["completion_tokens"] or 0,
-        latency_ms=result["latency_ms"],
-        tokens_per_sec=tokens_per_sec,
-        session_link_id=active_link.id if active_link is not None else None,
-    )
-
-    events.emit(
-        events.EventType.INFERENCE_COMPLETED,
-        runtime_id=chat.runtime_id,
-        agent_id=chat.agent_id,
-        session_id=active_link.id if active_link is not None else None,
-        metadata={
-            "chat_id": chat_id,
-            "prompt_tokens": result["prompt_tokens"],
-            "completion_tokens": result["completion_tokens"],
-            "latency_ms": result["latency_ms"],
-        },
-    )
-    return _message_to_dict(assistant_message)
+    return _message_to_dict(written[-1])
 
 
 # ---------------------------------------------------------------------

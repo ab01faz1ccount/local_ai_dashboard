@@ -24,11 +24,10 @@ without): the *.registered/*.removed/*.created/*.deleted catalog-CRUD
 events, and model.verification_completed. Each is commented at its
 definition so it's obvious it's an addition, not a spec citation.
 
-tool.* is declared now but nothing emits it yet -- there is no Tool
-Registry in this codebase yet. mcp.* is emitted by core/mcp/manager.py;
-permission.* is emitted by core/permissions/engine.py. Declaring an
-event type here means future work only has to call `events.emit(...)`,
-not also touch this taxonomy.
+tool.* is emitted by core/agent_loop.py, mcp.* by core/mcp/manager.py,
+and permission.* by core/permissions/engine.py. Declaring an event type
+here means future work only has to call `events.emit(...)`, not also
+touch this taxonomy.
 """
 
 from __future__ import annotations
@@ -73,7 +72,7 @@ class EventType(str, Enum):
     INFERENCE_COMPLETED = "inference.completed"
     INFERENCE_FAILED = "inference.failed"
 
-    # -- reserved: no emitter yet (Tool Registry doesn't exist) --
+    # -- Tool Registry / agent loop (core/agent_loop.py) --
     TOOL_CALLED = "tool.called"
     TOOL_COMPLETED = "tool.completed"
     TOOL_FAILED = "tool.failed"
@@ -118,9 +117,9 @@ EVENT_TYPE_DESCRIPTIONS: dict[EventType, str] = {
     EventType.INFERENCE_STARTED: "A chat completion request was sent to a runtime.",
     EventType.INFERENCE_COMPLETED: "A chat completion request finished successfully.",
     EventType.INFERENCE_FAILED: "A chat completion request failed.",
-    EventType.TOOL_CALLED: "(reserved -- no Tool Registry yet) A tool call started.",
-    EventType.TOOL_COMPLETED: "(reserved -- no Tool Registry yet) A tool call finished.",
-    EventType.TOOL_FAILED: "(reserved -- no Tool Registry yet) A tool call failed.",
+    EventType.TOOL_CALLED: "An agent called a tool.",
+    EventType.TOOL_COMPLETED: "A tool call finished successfully.",
+    EventType.TOOL_FAILED: "A tool call failed, was denied, or hit an unknown/disconnected tool.",
     EventType.MCP_CONNECTED: "An MCP server connected.",
     EventType.MCP_DISCONNECTED: "An MCP server disconnected (requested, or the connection was lost).",
     EventType.MCP_CONNECT_FAILED: "A connection attempt to an MCP server failed.",

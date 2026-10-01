@@ -22,8 +22,11 @@ error messages. To edit: send a partial `env`/`headers` object, where a
 key set to `null` deletes it and any other value sets it (keys you leave
 out are untouched).
 
-Deliberately absent: any route that CALLS a tool. Running a tool needs
-the Permission Engine first (next phases); see core/mcp/manager.py.
+Every successful connect and every /tools refresh syncs the server's
+current tool list into the Tool Registry (core/tools/registry.py) --
+what core/agent_loop.py reads to decide what to offer the model. This
+router still has no route that CALLS a tool; that only happens from a
+chat turn, gated by the Permission Engine (core/permissions/).
 """
 
 from __future__ import annotations
@@ -37,6 +40,7 @@ from sqlalchemy.orm import Session
 
 from ..core import events
 from ..core.mcp import McpBusyError, McpValidationError, mcp_manager
+from ..core.tools import sync_server_tools
 from ..core.mcp import validation as v
 from ..storage.db import McpServer
 from .http import get_db_session, require_token
@@ -259,6 +263,8 @@ def connect_server(server_id: int, db: Session = Depends(get_db_session)):
         status = mcp_manager.connect(db, row)
     except McpBusyError as exc:
         raise HTTPException(409, str(exc))
+    if status.state == "CONNECTED":
+        sync_server_tools(db, row.id, mcp_manager.cached_tools(row.id))
     return {**status.to_dict(), "server": _to_dict(row)}
 
 
@@ -284,4 +290,5 @@ def list_server_tools(server_id: int, db: Session = Depends(get_db_session)):
     if row.tools_count != len(tools):
         row.tools_count = len(tools)
         db.commit()
+    sync_server_tools(db, row.id, tools)
     return {"server_id": row.id, "tools": tools}

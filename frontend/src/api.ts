@@ -181,15 +181,35 @@ export interface ChatSummary {
   updated_at: string;
 }
 
+export interface ChatToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+/** On an 'assistant' message: which tools it asked to call. On a 'tool'
+ * message: which call this answers and how it went -- see
+ * backend/core/agent_loop.py's ChatMessage.tool_meta_json docstring. */
+export interface ChatToolMeta {
+  calls?: ChatToolCall[];
+  call_id?: string;
+  name?: string;
+  mcp_server_id?: number | null;
+  status?: "ok" | "error" | "denied";
+  risk_level?: RiskLevel;
+  decision?: PermissionDecision;
+}
+
 export interface ChatMessageItem {
   id: number;
   chat_id: number;
-  role: "user" | "assistant" | "system";
+  role: "user" | "assistant" | "system" | "tool";
   content: string;
   prompt_tokens: number | null;
   completion_tokens: number | null;
   latency_ms: number | null;
   created_at: string;
+  tool_meta: ChatToolMeta;
 }
 
 export interface GlobalSearchResult {
@@ -623,6 +643,23 @@ export interface CheckPermissionResult {
   decision_kind?: PermissionDecision;
 }
 
+// ---- Tool Registry (backend/core/tools/) ----
+
+export interface ToolItem {
+  id: number;
+  mcp_server_id: number;
+  server_name: string | null;
+  server_status: McpStatusName | null;
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+  annotations: Record<string, unknown>;
+  risk_level: RiskLevel;
+  enabled: boolean;
+  connected: boolean;
+  updated_at: string;
+}
+
 export const api = {
   bootstrapToken: () => request<{ access_token: string }>("/api/v1/auth/bootstrap-token"),
 
@@ -834,6 +871,17 @@ export const api = {
   disconnectMcpServer: (id: number) =>
     request<McpLifecycleResult>(`/api/v1/mcp/servers/${id}/disconnect`, { method: "POST" }),
   listMcpServerTools: (id: number) => request<{ server_id: number; tools: McpTool[] }>(`/api/v1/mcp/servers/${id}/tools`),
+
+  // ---- Tool Registry ----
+  listTools: (opts: { mcpServerId?: number; enabledOnly?: boolean } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.mcpServerId != null) params.set("mcp_server_id", String(opts.mcpServerId));
+    if (opts.enabledOnly) params.set("enabled_only", "true");
+    const qs = params.toString();
+    return request<ToolItem[]>(`/api/v1/tools${qs ? `?${qs}` : ""}`);
+  },
+  updateTool: (id: number, enabled: boolean) =>
+    request<ToolItem>(`/api/v1/tools/${id}`, { method: "PATCH", body: JSON.stringify({ enabled }) }),
 
   // ---- Permission Engine ----
   /** Blocks server-side until a decision is made or `timeoutSeconds` elapses. */

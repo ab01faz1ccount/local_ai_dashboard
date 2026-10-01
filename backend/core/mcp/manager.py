@@ -28,10 +28,10 @@ tell anyone. While connected, `_run` sends an MCP `ping` every
 `reason: "lost"` -- the MCP analogue of runtime_manager's poll-based
 crash detection.
 
-Deliberately NOT here: calling tools. Executing a tool is Tool Registry
-+ Permission Engine territory (the next phases); until a permission layer
-exists there is no code path that invokes a server's tools. This module
-only connects, lists tools, and disconnects.
+`call_tool()` executes one MCP tool call and is the ONLY place in the
+app that does; core/agent_loop.py is the only caller, and only after
+the Permission Engine (core/permissions/) has approved that specific
+call. Nothing else here decides whether a call is allowed.
 """
 
 from __future__ import annotations
@@ -41,6 +41,7 @@ import contextlib
 import sys
 import threading
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import Any, Optional
 
 from sqlalchemy.orm import Session
@@ -51,6 +52,7 @@ from ...storage.db import McpServer
 DEFAULT_CONNECT_TIMEOUT = 60.0  # generous: `npx -y <pkg>` may download on first run
 DEFAULT_PING_INTERVAL = 15.0
 DEFAULT_PING_TIMEOUT = 10.0
+DEFAULT_TOOL_CALL_TIMEOUT = 60.0
 STOP_GRACE_SECONDS = 10.0
 MAX_ERROR_LEN = 500
 
@@ -156,6 +158,27 @@ def _tool_to_dict(tool: Any) -> dict:
     return out
 
 
+def _tool_result_to_text(result: Any) -> str:
+    """An MCP `CallToolResult` is a list of typed content blocks
+    (text/image/audio/resource/...), not a string -- this collapses it
+    to the text a chat message can hold. Non-text blocks are represented
+    by a placeholder rather than dropped silently, so the model (and a
+    human reading the transcript) knows something was there. A result
+    the server itself flagged `isError` raises, so every caller handles
+    "the tool ran and failed" through the same path as a transport error."""
+    parts: list[str] = []
+    for block in getattr(result, "content", None) or []:
+        text_val = getattr(block, "text", None)
+        if text_val is not None:
+            parts.append(text_val)
+        else:
+            parts.append(f"[{getattr(block, 'type', 'content')} content omitted]")
+    text = "\n".join(parts)
+    if getattr(result, "isError", False):
+        raise RuntimeError(text or "tool reported an error")
+    return text
+
+
 class McpManager:
     def __init__(
         self,
@@ -163,10 +186,12 @@ class McpManager:
         connect_timeout: float = DEFAULT_CONNECT_TIMEOUT,
         ping_interval: float = DEFAULT_PING_INTERVAL,
         ping_timeout: float = DEFAULT_PING_TIMEOUT,
+        tool_call_timeout: float = DEFAULT_TOOL_CALL_TIMEOUT,
     ) -> None:
         self.connect_timeout = connect_timeout
         self.ping_interval = ping_interval
         self.ping_timeout = ping_timeout
+        self.tool_call_timeout = tool_call_timeout
 
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._thread: Optional[threading.Thread] = None
@@ -367,6 +392,15 @@ class McpManager:
         live.tools = await asyncio.wait_for(self._list_all_tools(live.session), timeout=self.ping_timeout + 20)
         return live.tools
 
+    async def _call_tool(self, server_id: int, tool_name: str, arguments: dict) -> Any:
+        live = self._live.get(server_id)
+        if live is None or live.session is None:
+            raise RuntimeError(f"server {server_id} is not connected")
+        return await asyncio.wait_for(
+            live.session.call_tool(tool_name, arguments, read_timeout_seconds=timedelta(seconds=self.tool_call_timeout)),
+            timeout=self.tool_call_timeout + 10,
+        )
+
     async def _stop_all(self) -> None:
         for live in list(self._live.values()):
             await self._halt(live)
@@ -470,6 +504,28 @@ class McpManager:
     def cached_tools(self, server_id: int) -> list[dict]:
         live = self._live.get(server_id)
         return list(live.tools) if live else []
+
+    def call_tool(self, server_id: int, tool_name: str, arguments: dict) -> str:
+        """Runs one MCP tool call and returns its result as text. This
+        is the ONLY place in the app that actually executes a tool --
+        core/agent_loop.py calls it strictly after the Permission Engine
+        has said `allow`, never before. A result flagged `isError` by
+        the server raises, same as a transport failure, so a caller can
+        treat "the tool ran and reported an error" and "the call
+        couldn't be made at all" the same way: as a failed step to
+        record and feed back to the model, not a crash."""
+        if not self.is_connected(server_id):
+            raise RuntimeError(f"server {server_id} is not connected")
+        cfg = self._live[server_id].cfg
+        try:
+            result = self._call(
+                self._call_tool(server_id, tool_name, arguments), timeout=self.tool_call_timeout + 15
+            )
+            return _tool_result_to_text(result)
+        except BaseException as exc:  # noqa: BLE001 - reported to the caller, never swallowed
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                raise
+            raise RuntimeError(_redact(_flatten_exception(exc), cfg.secret_values())) from exc
 
     def reset_stale_statuses(self, db: Session) -> int:
         """At process start nothing is live, so any CONNECTED/CONNECTING

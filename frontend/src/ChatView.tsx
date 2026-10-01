@@ -9,6 +9,7 @@ import {
   type RuntimeSummary,
 } from "./api";
 import { AgentTerminal } from "./components/AgentTerminal";
+import { AgentToolsPanel } from "./components/AgentToolsPanel";
 
 /**
  * The chat surface: every LLM gets one, whether or not it has an agent
@@ -262,6 +263,13 @@ export function ChatView({ initialChatId }: { initialChatId?: number | null } = 
                 </div>
               </div>
 
+              {selectedAgent != null && (
+                <AgentToolsPanel
+                  agent={selectedAgent}
+                  onUpdated={(updated) => setAgents((prev) => prev.map((a) => (a.id === updated.id ? updated : a)))}
+                />
+              )}
+
               {viewMode === "terminal" && hasRealBackend && selectedAgent ? (
                 <AgentTerminal
                   agentId={selectedAgent.id}
@@ -291,7 +299,28 @@ export function ChatView({ initialChatId }: { initialChatId?: number | null } = 
                   <div className="chat-messages">
                     {messages.map((m) => (
                       <div key={m.id} className={`chat-bubble ${m.role}`}>
-                        {m.content}
+                        {m.role === "tool" ? (
+                          <>
+                            <div className={`tool-result-header tool-result-${m.tool_meta.status ?? "ok"}`}>
+                              <span className="mono">{m.tool_meta.name ?? "tool"}</span>
+                              <span className="mcp-tag">{m.tool_meta.status ?? "ok"}</span>
+                            </div>
+                            <div className="mono tool-result-content">{m.content}</div>
+                          </>
+                        ) : (
+                          <>
+                            {m.content}
+                            {m.role === "assistant" && (m.tool_meta.calls?.length ?? 0) > 0 && (
+                              <div className="tool-calls-list">
+                                {m.tool_meta.calls!.map((c) => (
+                                  <span key={c.id} className="mcp-tag mono">
+                                    called {c.name}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        )}
                         {m.role === "assistant" && m.latency_ms != null && (
                           <div className="chat-bubble-meta">{Math.round(m.latency_ms)} ms</div>
                         )}
