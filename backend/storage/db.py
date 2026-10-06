@@ -1074,6 +1074,17 @@ def list_events(
     return q.order_by(Event.id.desc()).limit(limit).all()
 
 
+def list_metrics_snapshots(
+    db: Session, *, runtime_id: int, since: Optional[str] = None, limit: int = 500
+) -> list["MetricsSnapshot"]:
+    """Newest-first, same convention as list_events -- the time series
+    core/metrics.py's background sampler writes, for AnalyticsPage.tsx."""
+    q = db.query(MetricsSnapshot).filter(MetricsSnapshot.runtime_id == runtime_id)
+    if since is not None:
+        q = q.filter(MetricsSnapshot.timestamp >= since)
+    return q.order_by(MetricsSnapshot.id.desc()).limit(limit).all()
+
+
 # ---------------------------------------------------------------------------
 # Query helpers — chats + search
 # ---------------------------------------------------------------------------

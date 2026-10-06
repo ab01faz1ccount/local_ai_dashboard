@@ -29,7 +29,8 @@ user's own message.
 from __future__ import annotations
 
 import json
-from typing import Optional
+import threading
+from typing import Callable, Optional
 
 from sqlalchemy.orm import Session
 
@@ -89,6 +90,21 @@ def _tool_spec(tool: Tool) -> dict:
     }
 
 
+def offered_tool_specs(db: Session, chat: Chat) -> list[dict]:
+    """Exactly the `tools` array the next completion request for this
+    chat would carry (empty when none). Public so core/context_inspector.py
+    measures what the loop really sends, not a re-derivation that could
+    drift from it."""
+    agent = db.get(Agent, chat.agent_id) if chat.agent_id is not None else None
+    return [_tool_spec(t) for t in _agent_tools(db, agent)]
+
+
+def history_for_completion(db: Session, chat_id: int) -> list[dict]:
+    """Public name for the wire-format message history (see
+    _history_for_completion) -- same reason as offered_tool_specs."""
+    return _history_for_completion(db, chat_id)
+
+
 def _history_for_completion(db: Session, chat_id: int) -> list[dict]:
     """The stored ChatMessage rows, translated to what llama-server's
     /v1/chat/completions expects on the wire -- an assistant step that
@@ -122,13 +138,31 @@ def run_agent_turn(
     max_tokens: Optional[int] = None,
     max_steps: int = MAX_STEPS,
     permission_timeout: float = DEFAULT_PERMISSION_TIMEOUT,
+    on_delta: Optional[Callable[[str], None]] = None,
+    on_message: Optional[Callable[[ChatMessage], None]] = None,
+    cancel: Optional[threading.Event] = None,
 ) -> list[ChatMessage]:
     """Runs one user turn to completion. The caller has already written
     the user's ChatMessage; this writes and returns every message from
     here on (at least one -- the model's reply -- more if tools were
     called). Raises chat_engine.ChatCompletionError, same as the plain
     proxy did, if any completion call in the turn fails; messages
-    already written before that point stay committed."""
+    already written before that point stay committed.
+
+    Streaming (all optional, all-or-nothing independent):
+      on_delta(text)    -- given, completions are streamed and each piece of
+                           reply text is passed here as it arrives. Without
+                           it the blocking path is used, exactly as before.
+      on_message(msg)   -- called with every ChatMessage the moment it is
+                           committed (assistant steps and tool results), so
+                           a live view can swap its in-progress bubble for
+                           the stored message.
+      cancel            -- a threading.Event; once set the turn stops at the
+                           next safe point. Text already streamed is kept as
+                           an assistant message, and tool calls that were
+                           requested but never ran get an error result, so
+                           the stored history stays valid for the next turn.
+    """
     agent = db.get(Agent, chat.agent_id) if chat.agent_id is not None else None
     tools = _agent_tools(db, agent)
     tool_specs = [_tool_spec(t) for t in tools] or None
@@ -138,22 +172,54 @@ def run_agent_turn(
         if chat.agent_id is not None
         else None
     )
+    session_link_id = session_link.id if session_link is not None else None
 
     written: list[ChatMessage] = []
     steps = 0
 
+    def push(message: ChatMessage) -> None:
+        written.append(message)
+        if on_message is not None:
+            on_message(message)
+
+    def skip(calls: list[dict], reason: str) -> None:
+        for c in calls:
+            push(_tool_result_message(db, chat.id, c, reason, "error"))
+
+    def cancelled() -> bool:
+        return cancel is not None and cancel.is_set()
+
     while True:
+        if cancelled():
+            return written
+
         events.emit(
             events.EventType.INFERENCE_STARTED,
             runtime_id=chat.runtime_id,
             agent_id=chat.agent_id,
             metadata={"chat_id": chat.id},
         )
+        history = _history_for_completion(db, chat.id)
         try:
-            result = chat_engine.send_chat_completion(
-                endpoint, _history_for_completion(db, chat.id), temperature=temperature, max_tokens=max_tokens,
-                tools=tool_specs,
+            if on_delta is not None:
+                result = chat_engine.stream_chat_completion(
+                    endpoint, history, temperature=temperature, max_tokens=max_tokens, tools=tool_specs,
+                    on_delta=on_delta, cancel=cancel,
+                )
+            else:
+                result = chat_engine.send_chat_completion(
+                    endpoint, history, temperature=temperature, max_tokens=max_tokens, tools=tool_specs
+                )
+        except chat_engine.ChatCancelled as exc:
+            events.emit(
+                events.EventType.INFERENCE_FAILED,
+                runtime_id=chat.runtime_id,
+                agent_id=chat.agent_id,
+                metadata={"chat_id": chat.id, "error": "cancelled", "cancelled": True},
             )
+            if exc.partial_content:
+                push(storage_db.add_chat_message(db, chat.id, role="assistant", content=exc.partial_content))
+            return written
         except chat_engine.ChatCompletionError as exc:
             events.emit(
                 events.EventType.INFERENCE_FAILED,
@@ -165,17 +231,18 @@ def run_agent_turn(
 
         tool_calls = result.get("tool_calls") or []
         assistant_meta = {"calls": tool_calls} if tool_calls else {}
-        assistant_message = storage_db.add_chat_message(
-            db,
-            chat.id,
-            role="assistant",
-            content=result.get("content") or "",
-            prompt_tokens=result.get("prompt_tokens"),
-            completion_tokens=result.get("completion_tokens"),
-            latency_ms=result.get("latency_ms"),
-            tool_meta=assistant_meta,
+        push(
+            storage_db.add_chat_message(
+                db,
+                chat.id,
+                role="assistant",
+                content=result.get("content") or "",
+                prompt_tokens=result.get("prompt_tokens"),
+                completion_tokens=result.get("completion_tokens"),
+                latency_ms=result.get("latency_ms"),
+                tool_meta=assistant_meta,
+            )
         )
-        written.append(assistant_message)
 
         tokens_per_sec = None
         if result.get("completion_tokens") and result.get("latency_ms"):
@@ -188,14 +255,14 @@ def run_agent_turn(
             completion_tokens=result.get("completion_tokens") or 0,
             latency_ms=result.get("latency_ms"),
             tokens_per_sec=tokens_per_sec,
-            session_link_id=session_link.id if session_link is not None else None,
+            session_link_id=session_link_id,
             chat_id=chat.id,
         )
         events.emit(
             events.EventType.INFERENCE_COMPLETED,
             runtime_id=chat.runtime_id,
             agent_id=chat.agent_id,
-            session_id=session_link.id if session_link is not None else None,
+            session_id=session_link_id,
             metadata={
                 "chat_id": chat.id,
                 "prompt_tokens": result.get("prompt_tokens"),
@@ -212,19 +279,20 @@ def run_agent_turn(
                 events.EventType.TOOL_FAILED,
                 agent_id=chat.agent_id,
                 runtime_id=chat.runtime_id,
+                session_id=session_link_id,
                 metadata={"chat_id": chat.id, "reason": "max_steps_exceeded", "requested": len(tool_calls)},
             )
-            for call in tool_calls:
-                written.append(_tool_result_message(db, chat.id, call, "step limit reached before this tool ran", "error"))
+            skip(tool_calls, "step limit reached before this tool ran")
             return written
 
-        for call in tool_calls:
+        for i, call in enumerate(tool_calls):
+            if cancelled():
+                skip(tool_calls[i:], "cancelled before this tool ran")
+                return written
             steps += 1
-            written.append(_execute_tool_call(db, chat, call, tools_by_name, permission_timeout))
-            if steps >= max_steps and call is not tool_calls[-1]:
-                remaining = tool_calls[tool_calls.index(call) + 1 :]
-                for skipped in remaining:
-                    written.append(_tool_result_message(db, chat.id, skipped, "step limit reached before this tool ran", "error"))
+            push(_execute_tool_call(db, chat, call, tools_by_name, permission_timeout, session_link_id))
+            if steps >= max_steps and i < len(tool_calls) - 1:
+                skip(tool_calls[i + 1 :], "step limit reached before this tool ran")
                 return written
         # loop again: the model sees every tool result and takes the next step
 
@@ -246,7 +314,12 @@ def _tool_result_message(
 
 
 def _execute_tool_call(
-    db: Session, chat: Chat, call: dict, tools_by_name: dict[str, Tool], permission_timeout: float
+    db: Session,
+    chat: Chat,
+    call: dict,
+    tools_by_name: dict[str, Tool],
+    permission_timeout: float,
+    session_link_id: Optional[int],
 ) -> ChatMessage:
     qualified = call.get("name") or ""
     tool = tools_by_name.get(qualified)
@@ -255,6 +328,7 @@ def _execute_tool_call(
         events.EventType.TOOL_CALLED,
         agent_id=chat.agent_id,
         runtime_id=chat.runtime_id,
+        session_id=session_link_id,
         metadata={"chat_id": chat.id, "tool": qualified, "arguments": call.get("arguments")},
     )
 
@@ -263,6 +337,7 @@ def _execute_tool_call(
             events.EventType.TOOL_FAILED,
             agent_id=chat.agent_id,
             runtime_id=chat.runtime_id,
+            session_id=session_link_id,
             metadata={"chat_id": chat.id, "tool": qualified, "reason": "unknown_tool"},
         )
         return _tool_result_message(db, chat.id, call, f"unknown tool: {qualified}", "error")
@@ -272,6 +347,7 @@ def _execute_tool_call(
             events.EventType.TOOL_FAILED,
             agent_id=chat.agent_id,
             runtime_id=chat.runtime_id,
+            session_id=session_link_id,
             metadata={"chat_id": chat.id, "tool": qualified, "reason": "server_not_connected"},
         )
         return _tool_result_message(db, chat.id, call, f"the server for {tool.name} is not connected", "error", tool=tool)
@@ -283,6 +359,7 @@ def _execute_tool_call(
         scope_key=scope_key,
         risk_level=tool.risk_level,
         agent_id=chat.agent_id,
+        session_id=session_link_id,
         description=f"{tool.name}({json.dumps(call.get('arguments') or {}, ensure_ascii=False)})",
         timeout=permission_timeout,
     )
@@ -291,6 +368,7 @@ def _execute_tool_call(
             events.EventType.TOOL_FAILED,
             agent_id=chat.agent_id,
             runtime_id=chat.runtime_id,
+            session_id=session_link_id,
             metadata={"chat_id": chat.id, "tool": qualified, "reason": "permission_denied"},
         )
         return _tool_result_message(db, chat.id, call, "permission denied", "denied", tool=tool, decision=decision)
@@ -302,6 +380,7 @@ def _execute_tool_call(
             events.EventType.TOOL_FAILED,
             agent_id=chat.agent_id,
             runtime_id=chat.runtime_id,
+            session_id=session_link_id,
             metadata={"chat_id": chat.id, "tool": qualified, "reason": "call_failed", "error": str(exc)},
         )
         return _tool_result_message(db, chat.id, call, f"tool error: {exc}", "error", tool=tool, decision=decision)
@@ -310,6 +389,7 @@ def _execute_tool_call(
         events.EventType.TOOL_COMPLETED,
         agent_id=chat.agent_id,
         runtime_id=chat.runtime_id,
+        session_id=session_link_id,
         metadata={"chat_id": chat.id, "tool": qualified},
     )
     return _tool_result_message(db, chat.id, call, output, "ok", tool=tool, decision=decision)

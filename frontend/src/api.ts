@@ -7,6 +7,8 @@
  * handshake (see backend/api/ws.py for the matching server-side check).
  */
 
+import { createSseParser, type SseEvent } from "./sse-utils";
+
 export type RuntimeState = "OFFLINE" | "STARTING" | "ONLINE" | "STOPPING" | "ERROR";
 
 export interface RuntimeSummary {
@@ -84,6 +86,7 @@ export interface ModelComparisonRow {
     estimated_total_mb: number;
     note: string;
   };
+  hardware_fit: HardwareFit;
   real_world_performance: {
     requests_count: number;
     avg_latency_ms: number | null;
@@ -660,6 +663,98 @@ export interface ToolItem {
   updated_at: string;
 }
 
+// ---- Sessions + metrics history (backend/core/session_export.py, core/metrics.py) ----
+
+export interface SessionSummary {
+  id: number;
+  runtime_id: number;
+  runtime_name: string | null;
+  agent_id: number;
+  agent_name: string | null;
+  started_at: string;
+  ended_at: string | null;
+  status: string;
+  requests_count: number;
+  prompt_tokens_total: number;
+  completion_tokens_total: number;
+  avg_latency_ms: number | null;
+  avg_tokens_per_sec: number | null;
+}
+
+export interface SessionDetail extends SessionSummary {
+  chat_ids: number[];
+  /** How many of each event_type happened during this session. */
+  event_counts: Record<string, number>;
+}
+
+export type SessionExportFormat = "json" | "jsonl" | "markdown";
+
+export interface MetricsSnapshotItem {
+  id: number;
+  runtime_id: number;
+  timestamp: string;
+  cpu_percent: number | null;
+  ram_used_mb: number | null;
+  ram_total_mb: number | null;
+  gpu_percent: number | null;
+  vram_used_mb: number | null;
+  vram_total_mb: number | null;
+  tokens_per_sec: number | null;
+  last_latency_ms: number | null;
+}
+
+// ---- Hardware Fit Analyzer + Context Inspector (backend/core/hardware_fit.py, context_inspector.py) ----
+
+export type FitLabel = "GOOD" | "WARNING" | "LIKELY_TO_EXCEED" | "NOT_RECOMMENDED" | "UNKNOWN";
+
+export interface HardwareFit {
+  label: FitLabel;
+  /** Where the verdict was judged: the GPU's VRAM or system RAM. Null when unknown. */
+  target: "gpu" | "cpu" | null;
+  ratio: number | null;
+  capacity_mb: number | null;
+  estimated_mb: number;
+  reason: string;
+}
+
+export type ContextCategoryKey = "system" | "tool_definitions" | "conversation" | "tool_results";
+export type ContextStatus = "OK" | "HIGH" | "CRITICAL" | "OVER" | "UNKNOWN";
+
+export interface ContextCategory {
+  key: ContextCategoryKey;
+  label: string;
+  tokens: number;
+  items: number;
+  percent_of_window: number | null;
+}
+
+export interface ContextLargestItem {
+  message_id: number;
+  role: string;
+  category: ContextCategoryKey;
+  chars: number;
+  estimated_tokens: number;
+  preview: string;
+}
+
+export interface ContextInspection {
+  chat_id: number;
+  runtime_id: number;
+  context_window: number | null;
+  context_window_source: "runtime_config" | "model_metadata" | null;
+  /** "tokenizer" = the runtime's own /tokenize; "estimate" = a character-based guess. */
+  method: "tokenizer" | "estimate";
+  categories: ContextCategory[];
+  total_tokens: number;
+  percent_used: number | null;
+  headroom_tokens: number | null;
+  status: ContextStatus;
+  /** What the server itself reported for the previous request -- ground truth. */
+  last_prompt_tokens: number | null;
+  tool_count: number;
+  largest_items: ContextLargestItem[];
+}
+
 export const api = {
   bootstrapToken: () => request<{ access_token: string }>("/api/v1/auth/bootstrap-token"),
 
@@ -772,6 +867,52 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ content, ...opts }),
     }),
+  /** Streaming send (POST /chats/{id}/messages/stream). Calls `onEvent` for
+   * every server-sent event as it arrives and resolves when the stream
+   * ends. Pre-flight failures (unknown chat, offline runtime) reject with an
+   * ApiError like any other call; aborting `signal` resolves quietly -- the
+   * server keeps whatever text had already streamed. */
+  streamChatMessage: async (
+    chatId: number,
+    content: string,
+    onEvent: (ev: SseEvent) => void,
+    opts: { temperature?: number; max_tokens?: number; signal?: AbortSignal } = {}
+  ): Promise<void> => {
+    const { signal, ...body } = opts;
+    const token = getStoredToken();
+    let res: Response;
+    try {
+      res = await fetch(`${BASE_URL}/api/v1/chats/${chatId}/messages/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ content, ...body }),
+        signal,
+      });
+    } catch (err) {
+      if (signal?.aborted) return;
+      throw err;
+    }
+    if (res.status === 401) {
+      clearStoredToken();
+      throw new ApiError(401, "Access token is invalid or missing.");
+    }
+    if (!res.ok || !res.body) {
+      throw new ApiError(res.status, apiErrorMessage(new Error(await res.text().catch(() => "")), `Request failed (${res.status})`));
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    const parser = createSseParser();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        for (const ev of parser.feed(decoder.decode(value, { stream: true }))) onEvent(ev);
+      }
+    } catch (err) {
+      if (signal?.aborted) return;
+      throw err;
+    }
+  },
   searchInChat: (chatId: number, q: string) =>
     request<ChatMessageItem[]>(`/api/v1/chats/${chatId}/search?q=${encodeURIComponent(q)}`),
   globalSearch: (q: string) =>
@@ -882,6 +1023,46 @@ export const api = {
   },
   updateTool: (id: number, enabled: boolean) =>
     request<ToolItem>(`/api/v1/tools/${id}`, { method: "PATCH", body: JSON.stringify({ enabled }) }),
+
+  // ---- Sessions + metrics history ----
+  listSessions: (opts: { runtimeId?: number; agentId?: number; activeOnly?: boolean } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.runtimeId != null) params.set("runtime_id", String(opts.runtimeId));
+    if (opts.agentId != null) params.set("agent_id", String(opts.agentId));
+    if (opts.activeOnly) params.set("active_only", "true");
+    const qs = params.toString();
+    return request<SessionSummary[]>(`/api/v1/sessions${qs ? `?${qs}` : ""}`);
+  },
+  getSession: (id: number) => request<SessionDetail>(`/api/v1/sessions/${id}`),
+  /** Fetches the export with the auth header (a plain <a href> can't send one)
+   * and returns the file's text + the filename the server suggested. */
+  exportSession: async (id: number, format: SessionExportFormat): Promise<{ filename: string; content: string }> => {
+    const token = getStoredToken();
+    const res = await fetch(`${BASE_URL}/api/v1/sessions/${id}/export?format=${format}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (res.status === 401) {
+      clearStoredToken();
+      throw new ApiError(401, "Access token is invalid or missing.");
+    }
+    if (!res.ok) throw new ApiError(res.status, (await res.text().catch(() => "")) || `Request failed (${res.status})`);
+    const disposition = res.headers.get("Content-Disposition") ?? "";
+    const match = /filename="([^"]+)"/.exec(disposition);
+    return { filename: match?.[1] ?? `session-${id}.${format}`, content: await res.text() };
+  },
+  // ---- Hardware fit + context inspector ----
+  getModelFit: (id: number) =>
+    request<{ estimated_system_impact: ModelComparisonRow["estimated_system_impact"]; hardware_fit: HardwareFit }>(
+      `/api/v1/models/${id}/fit`
+    ),
+  getChatContext: (chatId: number) => request<ContextInspection>(`/api/v1/chats/${chatId}/context`),
+  getRuntimeMetricsHistory: (runtimeId: number, opts: { since?: string; limit?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.since) params.set("since", opts.since);
+    if (opts.limit != null) params.set("limit", String(opts.limit));
+    const qs = params.toString();
+    return request<MetricsSnapshotItem[]>(`/api/v1/runtimes/${runtimeId}/metrics/history${qs ? `?${qs}` : ""}`);
+  },
 
   // ---- Permission Engine ----
   /** Blocks server-side until a decision is made or `timeoutSeconds` elapses. */

@@ -33,6 +33,7 @@ from .api.permissions import router as permissions_router
 from .api.tools import router as tools_router
 from .api.ws import router as ws_router
 from .core.mcp import mcp_manager
+from .core.metrics import metrics_recorder
 from .core.security import get_allowed_origins, get_or_create_access_token
 from .storage import db as storage_db
 from .storage.db import init_db
@@ -62,12 +63,16 @@ def _on_startup() -> None:
     # left over from the previous run is stale -- reset it.
     with storage_db.SessionLocal() as db:
         mcp_manager.reset_stale_statuses(db)
+    # The server-side analytics history sampler (core/metrics.py) -- independent
+    # of whether any browser has /ws/metrics open.
+    metrics_recorder.start()
 
 
 @app.on_event("shutdown")
 def _on_shutdown() -> None:
     # Terminates any stdio MCP server child processes instead of orphaning them.
     mcp_manager.shutdown()
+    metrics_recorder.stop()
 
 
 @app.get("/api/v1/auth/bootstrap-token")

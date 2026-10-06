@@ -6,6 +6,9 @@ import { LogsPage } from "./LogsPage";
 import { McpPage } from "./McpPage";
 import { PermissionPrompt } from "./components/PermissionPrompt";
 import { PermissionsPage } from "./PermissionsPage";
+import { AnalyticsPage } from "./AnalyticsPage";
+import { SessionsPage } from "./SessionsPage";
+import { NotificationsPanel } from "./components/NotificationsPanel";
 import { ModelsPage } from "./ModelsPage";
 import { OnboardingWizard } from "./OnboardingWizard";
 import { ProjectsPage } from "./ProjectsPage";
@@ -100,7 +103,7 @@ export default function App() {
   return <MainShell />;
 }
 
-type View = "dashboard" | "models" | "projects" | "chats" | "mcp" | "permissions" | "logs" | "setup" | "settings";
+type View = "dashboard" | "models" | "projects" | "chats" | "sessions" | "analytics" | "mcp" | "permissions" | "logs" | "setup" | "settings";
 
 function MainShell() {
   const [view, setView] = useState<View>("dashboard");
@@ -128,6 +131,12 @@ function MainShell() {
           <button className={view === "chats" ? "active" : ""} onClick={() => setView("chats")}>
             Chats
           </button>
+          <button className={view === "sessions" ? "active" : ""} onClick={() => setView("sessions")}>
+            Sessions
+          </button>
+          <button className={view === "analytics" ? "active" : ""} onClick={() => setView("analytics")}>
+            Analytics
+          </button>
           <button className={view === "mcp" ? "active" : ""} onClick={() => setView("mcp")}>
             MCP
           </button>
@@ -150,6 +159,8 @@ function MainShell() {
       {view === "models" && <ModelsPage />}
       {view === "projects" && <ProjectsPage onOpenChat={openChat} />}
       {view === "chats" && <ChatView initialChatId={pendingChatId} />}
+      {view === "sessions" && <SessionsPage />}
+      {view === "analytics" && <AnalyticsPage />}
       {view === "mcp" && <McpPage />}
       {view === "permissions" && <PermissionsPage />}
       {view === "logs" && <LogsPage />}
@@ -158,6 +169,7 @@ function MainShell() {
       )}
       {view === "settings" && <SettingsPage />}
       <PermissionPrompt />
+      <NotificationsPanel />
     </div>
   );
 }

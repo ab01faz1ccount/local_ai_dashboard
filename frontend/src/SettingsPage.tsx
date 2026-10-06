@@ -77,6 +77,7 @@ const RUNTIME_FIELD_GROUPS: {
       { key: "yarn_attn_factor", label: "YaRN Attn Factor", type: "number" },
       { key: "yarn_beta_fast", label: "YaRN Beta Fast", type: "number" },
       { key: "yarn_beta_slow", label: "YaRN Beta Slow", type: "number" },
+      { key: "jinja", label: "Jinja chat template (required for agent tool calling)", type: "checkbox" },
       { key: "chat_template", label: "Chat Template", type: "text" },
     ],
   },

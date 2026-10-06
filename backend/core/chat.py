@@ -66,7 +66,7 @@ def send_chat_completion(
             payload = json.loads(resp.read())
     except HTTPError as exc:
         detail = exc.read().decode(errors="replace") if exc.fp else str(exc)
-        raise ChatCompletionError(f"llama-server returned {exc.code}: {detail[:300]}") from exc
+        raise ChatCompletionError(_http_error_message(exc.code, detail, bool(tools))) from exc
     except (URLError, TimeoutError, OSError, ValueError) as exc:
         raise ChatCompletionError(f"could not reach the runtime: {exc}") from exc
 
@@ -88,6 +88,23 @@ def send_chat_completion(
         "latency_ms": latency_ms,
         "tool_calls": tool_calls,
     }
+
+
+_JINJA_HINT = (
+    " -- the runtime must be started with the \"Jinja chat template\" option "
+    "(Settings -> Runtimes -> RoPE & Chat Template) for tool calling to work."
+)
+
+
+def _http_error_message(code: int, detail: str, had_tools: bool) -> str:
+    """llama-server's rejection of `tools` on a runtime launched without
+    --jinja is cryptic ("tools param requires --jinja flag"); say what to
+    click instead. Only when tools were actually sent -- a plain chat that
+    fails for another reason must not be blamed on a flag it doesn't use."""
+    msg = f"llama-server returned {code}: {detail[:300]}"
+    if had_tools and "jinja" in detail.lower():
+        msg += _JINJA_HINT
+    return msg
 
 
 def _parse_tool_calls(raw: Optional[list]) -> list[dict]:
@@ -112,3 +129,119 @@ def _parse_tool_calls(raw: Optional[list]) -> list[dict]:
                 args = {}
         calls.append({"id": c.get("id") or f"call_{i}", "name": fn.get("name", ""), "arguments": args})
     return calls
+
+
+class ChatCancelled(Exception):
+    """The caller asked a streaming completion to stop (its `cancel` event
+    was set -- in practice, the browser disconnected or pressed Stop).
+    Carries whatever text had already arrived so the agent loop can keep it
+    instead of throwing away the half-finished answer the user was reading."""
+
+    def __init__(self, partial_content: str = "") -> None:
+        super().__init__("completion cancelled")
+        self.partial_content = partial_content
+
+
+def stream_chat_completion(
+    endpoint: str,
+    messages: list[dict],
+    temperature: float = 0.8,
+    max_tokens: Optional[int] = None,
+    timeout: float = 120.0,
+    tools: Optional[list[dict]] = None,
+    on_delta=None,
+    cancel=None,
+) -> dict:
+    """Same contract and return shape as `send_chat_completion`, but asks
+    llama-server for `stream: true` and calls `on_delta(text)` for every
+    piece of reply text as it arrives. Tool calls arrive as fragments
+    (name once, arguments split across chunks, keyed by `index`) and are
+    reassembled here, so callers get the same finished
+    [{"id","name","arguments"}] list either way.
+
+    `timeout` is per socket read, not for the whole reply -- a long answer
+    that keeps producing tokens never trips it; a server that goes silent
+    does. `cancel` (a threading.Event) is checked between chunks; setting it
+    closes the connection (which stops llama-server generating) and raises
+    ChatCancelled with the partial text."""
+    body: dict = {
+        "messages": messages,
+        "temperature": temperature,
+        "stream": True,
+        "stream_options": {"include_usage": True},
+    }
+    if max_tokens is not None:
+        body["max_tokens"] = max_tokens
+    if tools:
+        body["tools"] = tools
+
+    req = urlrequest.Request(
+        f"{endpoint}/v1/chat/completions",
+        data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json", "Accept": "text/event-stream"},
+        method="POST",
+    )
+
+    start = time.time()
+    parts: list[str] = []
+    raw_calls: dict[int, dict] = {}
+    usage: dict = {}
+    finished = False
+
+    try:
+        resp = urlrequest.urlopen(req, timeout=timeout)
+    except HTTPError as exc:
+        detail = exc.read().decode(errors="replace") if exc.fp else str(exc)
+        raise ChatCompletionError(_http_error_message(exc.code, detail, bool(tools))) from exc
+    except (URLError, TimeoutError, OSError, ValueError) as exc:
+        raise ChatCompletionError(f"could not reach the runtime: {exc}") from exc
+
+    try:
+        with resp:
+            for raw_line in resp:
+                if cancel is not None and cancel.is_set():
+                    raise ChatCancelled("".join(parts))
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if not line or line.startswith(":") or not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    finished = True
+                    break
+                try:
+                    chunk = json.loads(data)
+                except json.JSONDecodeError:
+                    continue  # a malformed frame shouldn't kill an otherwise good stream
+                if chunk.get("usage"):
+                    usage = chunk["usage"]
+                for choice in chunk.get("choices") or []:
+                    delta = choice.get("delta") or {}
+                    text = delta.get("content")
+                    if text:
+                        parts.append(text)
+                        if on_delta is not None:
+                            on_delta(text)
+                    for tc in delta.get("tool_calls") or []:
+                        slot = raw_calls.setdefault(tc.get("index", 0), {"id": None, "function": {"name": "", "arguments": ""}})
+                        if tc.get("id"):
+                            slot["id"] = tc["id"]
+                        fn = tc.get("function") or {}
+                        if fn.get("name"):
+                            slot["function"]["name"] += fn["name"]
+                        if fn.get("arguments"):
+                            slot["function"]["arguments"] += fn["arguments"]
+    except ChatCancelled:
+        raise
+    except (URLError, TimeoutError, OSError, ValueError) as exc:
+        raise ChatCompletionError(f"the stream from the runtime broke: {exc}") from exc
+
+    if not finished:
+        raise ChatCompletionError("the stream from the runtime ended before it finished")
+
+    return {
+        "content": "".join(parts),
+        "prompt_tokens": usage.get("prompt_tokens"),
+        "completion_tokens": usage.get("completion_tokens"),
+        "latency_ms": (time.time() - start) * 1000,
+        "tool_calls": _parse_tool_calls([raw_calls[i] for i in sorted(raw_calls)]),
+    }

@@ -1,4 +1,5 @@
 import type { ModelComparisonRow } from "../api";
+import { FitBadge } from "./FitBadge";
 
 function formatMb(mb: number): string {
   return mb >= 1024 ? `${(mb / 1024).toFixed(2)} GB` : `${mb.toFixed(0)} MB`;
@@ -60,6 +61,14 @@ export function ModelCompareTable({ rows, internetAvailable }: { rows: ModelComp
             <td>Est. total RAM/VRAM</td>
             {rows.map((r) => (
               <td key={r.metadata.id}>{formatMb(r.estimated_system_impact.estimated_total_mb)}</td>
+            ))}
+          </tr>
+          <tr>
+            <td>Fit on this machine</td>
+            {rows.map((r) => (
+              <td key={r.metadata.id}>
+                <FitBadge fit={r.hardware_fit} />
+              </td>
             ))}
           </tr>
 

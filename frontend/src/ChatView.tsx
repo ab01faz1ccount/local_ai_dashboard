@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   api,
+  apiErrorMessage,
   type AgentBackendInfo,
   type AgentSummary,
   type ChatMessageItem,
@@ -10,6 +11,8 @@ import {
 } from "./api";
 import { AgentTerminal } from "./components/AgentTerminal";
 import { AgentToolsPanel } from "./components/AgentToolsPanel";
+import { applyStreamEvent, startStream, toStreamEvent } from "./chat-stream-utils";
+import { ContextInspectorPanel } from "./components/ContextInspectorPanel";
 
 /**
  * The chat surface: every LLM gets one, whether or not it has an agent
@@ -36,6 +39,8 @@ export function ChatView({ initialChatId }: { initialChatId?: number | null } = 
 
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [liveText, setLiveText] = useState("");
+  const abortRef = useRef<AbortController | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [globalQuery, setGlobalQuery] = useState("");
@@ -106,21 +111,56 @@ export function ChatView({ initialChatId }: { initialChatId?: number | null } = 
 
   async function handleSend() {
     if (!draft.trim() || selectedChatId == null) return;
+    const chatId = selectedChatId;
+    const content = draft;
     setSending(true);
     setError(null);
-    const content = draft;
     setDraft("");
+    const abort = new AbortController();
+    abortRef.current = abort;
+
+    // Live state for this turn: the reducer is the only thing that decides what
+    // each server event does to the screen (see chat-stream-utils.ts).
+    let state = startStream(messages);
+    const apply = (ev: Parameters<typeof applyStreamEvent>[1]) => {
+      state = applyStreamEvent(state, ev);
+      setMessages(state.messages);
+      setLiveText(state.liveText);
+      if (state.error) setError(state.error);
+    };
+
     try {
-      await api.sendChatMessage(selectedChatId, content);
-      const [updated, chatList] = await Promise.all([api.getChatMessages(selectedChatId), api.listChats()]);
-      setMessages(updated);
-      setChats(chatList);
+      await api.streamChatMessage(
+        chatId,
+        content,
+        (sse) => {
+          const ev = toStreamEvent(sse);
+          if (ev) apply(ev);
+        },
+        { signal: abort.signal }
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not send the message.");
-      setDraft(content); // give the message back so it isn't lost
+      // Nothing was stored (the turn never started): give the text back.
+      setError(err instanceof Error ? apiErrorMessage(err, "Could not send the message.") : "Could not send the message.");
+      setDraft(content);
     } finally {
+      abortRef.current = null;
+      setLiveText("");
       setSending(false);
+      // Re-sync with the server: it is the source of truth (a Stop keeps the
+      // partial reply it had already stored, which only the server knows).
+      try {
+        const [updated, chatList] = await Promise.all([api.getChatMessages(chatId), api.listChats()]);
+        setMessages(updated);
+        setChats(chatList);
+      } catch {
+        /* keep what the stream showed */
+      }
     }
+  }
+
+  function handleStop() {
+    abortRef.current?.abort();
   }
 
   async function handleGlobalSearch() {
@@ -263,6 +303,8 @@ export function ChatView({ initialChatId }: { initialChatId?: number | null } = 
                 </div>
               </div>
 
+              <ContextInspectorPanel chatId={selectedChat.id} refreshKey={messages.length} />
+
               {selectedAgent != null && (
                 <AgentToolsPanel
                   agent={selectedAgent}
@@ -326,6 +368,11 @@ export function ChatView({ initialChatId }: { initialChatId?: number | null } = 
                         )}
                       </div>
                     ))}
+                    {sending && (
+                      <div className="chat-bubble assistant chat-bubble-live" aria-live="polite" data-testid="live-reply">
+                        {liveText || <span className="muted">Thinking…</span>}
+                      </div>
+                    )}
                     <div ref={messagesEndRef} />
                   </div>
 
@@ -343,9 +390,13 @@ export function ChatView({ initialChatId }: { initialChatId?: number | null } = 
                       }}
                       placeholder="Message this LLM…"
                     />
-                    <button className="primary" disabled={sending || !draft.trim()} onClick={handleSend}>
-                      {sending ? "Sending…" : "Send"}
-                    </button>
+                    {sending ? (
+                      <button onClick={handleStop}>Stop</button>
+                    ) : (
+                      <button className="primary" disabled={!draft.trim()} onClick={handleSend}>
+                        Send
+                      </button>
+                    )}
                   </div>
                 </>
               )}

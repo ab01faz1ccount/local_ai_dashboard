@@ -194,6 +194,12 @@ class LlamaCppEngine(InferenceEngine):
         add("--device", "device")
         add("--tensor-split", "tensor_split")
 
+        if config.get("jinja"):
+            # llama-server only honors an OpenAI-style `tools` array (what
+            # core/agent_loop.py sends) when it renders prompts with the
+            # model's Jinja chat template; without this flag many builds
+            # reject or silently ignore tool definitions.
+            args.append("--jinja")
         if config.get("embedding"):
             args.append("--embedding")
         if config.get("flash_attn"):

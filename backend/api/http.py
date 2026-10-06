@@ -12,10 +12,15 @@ Synapse or anything else later) on purpose.
 
 from __future__ import annotations
 
+import asyncio
+import json
+import threading
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -25,16 +30,20 @@ from ..core import authenticity
 from ..core import chat as chat_engine
 from ..core import comparison
 from ..core import connectivity
+from ..core import context_inspector
 from ..core import events
 from ..core import git_panel
+from ..core import hardware_fit
+from ..core import session_export
 from ..core import models as model_manager
 from ..core import onboarding
+from ..core import session_export
 from ..core import project_usage
 from ..core.engine.base import RuntimeState
 from ..core.runtime_manager import runtime_manager
 from ..core.security import get_or_create_access_token
 from ..storage import db as storage_db
-from ..storage.db import Agent, MLModel, Project, Runtime
+from ..storage.db import Agent, Event, LlmAgentSession, MLModel, Project, Runtime
 
 router = APIRouter(prefix="/api/v1")
 
@@ -345,10 +354,42 @@ def get_runtime_metrics(runtime_id: int, db: Session = Depends(get_db_session)):
     }
 
 
+@router.get("/runtimes/{runtime_id}/metrics/history")
+def get_runtime_metrics_history(
+    runtime_id: int,
+    since: Optional[str] = Query(default=None, description="ISO-8601 timestamp lower bound (inclusive)."),
+    limit: int = Query(default=500, le=5000),
+    db: Session = Depends(get_db_session),
+):
+    """The time series `core/metrics.py`'s background sampler writes --
+    what AnalyticsPage.tsx charts. Newest-first like every other history
+    endpoint in this API; the frontend reverses it for a left-to-right
+    chart."""
+    _get_runtime_or_404(db, runtime_id)
+    rows = storage_db.list_metrics_snapshots(db, runtime_id=runtime_id, since=since, limit=limit)
+    return [_metrics_snapshot_to_dict(r) for r in rows]
+
+
 @router.get("/runtimes/{runtime_id}/logs")
 def get_runtime_logs(runtime_id: int, n: int = Query(default=200, le=2000), db: Session = Depends(get_db_session)):
     rt = _get_runtime_or_404(db, runtime_id)
     return {"lines": runtime_manager.get_logs(rt, n)}
+
+
+def _metrics_snapshot_to_dict(s) -> dict:
+    return {
+        "id": s.id,
+        "runtime_id": s.runtime_id,
+        "timestamp": s.timestamp,
+        "cpu_percent": s.cpu_percent,
+        "ram_used_mb": s.ram_used_mb,
+        "ram_total_mb": s.ram_total_mb,
+        "gpu_percent": s.gpu_percent,
+        "vram_used_mb": s.vram_used_mb,
+        "vram_total_mb": s.vram_total_mb,
+        "tokens_per_sec": s.tokens_per_sec,
+        "last_latency_ms": s.last_latency_ms,
+    }
 
 
 # ---------------------------------------------------------------------
@@ -457,7 +498,21 @@ def compare_models(body: ModelCompareRequest, db: Session = Depends(get_db_sessi
     Hugging Face repo) public benchmark data from that repo's card."""
     if not body.model_ids:
         raise HTTPException(400, "model_ids must be a non-empty list")
-    return comparison.compare_models(db, body.model_ids)
+    return comparison.compare_models(db, body.model_ids, hardware=runtime_manager.get_hardware_snapshot())
+
+
+@router.get("/models/{model_id}/fit")
+def get_model_fit(model_id: int, db: Session = Depends(get_db_session)):
+    """Hardware Fit Analyzer for one model (section 12): the memory
+    estimate plus a GOOD/WARNING/LIKELY_TO_EXCEED/NOT_RECOMMENDED
+    verdict against this machine. Same numbers the comparison table shows,
+    for places (a models list, a runtime form) that only have one model."""
+    model = _get_model_or_404(db, model_id)
+    impact = comparison.estimate_system_impact(model)
+    return {
+        "estimated_system_impact": impact,
+        "hardware_fit": hardware_fit.assess_from_snapshot(impact["estimated_total_mb"], runtime_manager.get_hardware_snapshot()),
+    }
 
 
 @router.get("/system/connectivity")
@@ -722,6 +777,81 @@ def detach_session(link_id: int, db: Session = Depends(get_db_session)):
     return {"session_link_id": link.id, "ended_at": link.ended_at}
 
 
+def _session_link_to_dict(link: LlmAgentSession, runtime_name: Optional[str], agent_name: Optional[str]) -> dict:
+    return {
+        "id": link.id,
+        "runtime_id": link.runtime_id,
+        "runtime_name": runtime_name,
+        "agent_id": link.agent_id,
+        "agent_name": agent_name,
+        "started_at": link.started_at,
+        "ended_at": link.ended_at,
+        "status": link.status,
+        "requests_count": link.requests_count,
+        "prompt_tokens_total": link.prompt_tokens_total,
+        "completion_tokens_total": link.completion_tokens_total,
+        "avg_latency_ms": link.avg_latency_ms,
+        "avg_tokens_per_sec": link.avg_tokens_per_sec,
+    }
+
+
+@router.get("/sessions")
+def list_sessions(
+    runtime_id: Optional[int] = None,
+    agent_id: Optional[int] = None,
+    active_only: bool = False,
+    db: Session = Depends(get_db_session),
+):
+    """Section 22: a session as a first-class, listable entity -- the
+    cumulative stats already rolled up live by record_request() onto
+    each `llm_agent_sessions` row, not a re-scan of request_logs."""
+    q = db.query(LlmAgentSession)
+    if runtime_id is not None:
+        q = q.filter(LlmAgentSession.runtime_id == runtime_id)
+    if agent_id is not None:
+        q = q.filter(LlmAgentSession.agent_id == agent_id)
+    if active_only:
+        q = q.filter(LlmAgentSession.ended_at.is_(None))
+    rows = q.order_by(LlmAgentSession.id.desc()).all()
+    runtimes = {r.id: r.name for r in db.query(Runtime).all()}
+    agents = {a.id: a.name for a in db.query(Agent).all()}
+    return [_session_link_to_dict(link, runtimes.get(link.runtime_id), agents.get(link.agent_id)) for link in rows]
+
+
+@router.get("/sessions/{link_id}")
+def get_session(link_id: int, db: Session = Depends(get_db_session)):
+    link = db.get(LlmAgentSession, link_id)
+    if link is None:
+        raise HTTPException(404, "session link not found")
+    runtime = db.get(Runtime, link.runtime_id)
+    agent = db.get(Agent, link.agent_id)
+    base = _session_link_to_dict(link, runtime.name if runtime else None, agent.name if agent else None)
+    event_counts = dict(
+        db.query(Event.event_type, func.count(Event.id)).filter(Event.session_id == link_id).group_by(Event.event_type).all()
+    )
+    return {**base, "chat_ids": session_export.chat_ids_for_session(db, link_id), "event_counts": event_counts}
+
+
+@router.get("/sessions/{link_id}/export")
+def export_session(link_id: int, format: str = Query(default="json"), db: Session = Depends(get_db_session)):
+    """Section 22's export requirement -- JSON/JSONL for tooling,
+    Markdown for a human (also doubles as a stand-in Agent Trace view,
+    see core/session_export.py)."""
+    link = db.get(LlmAgentSession, link_id)
+    if link is None:
+        raise HTTPException(404, "session link not found")
+    spec = session_export.EXPORT_FORMATS.get(format)
+    if spec is None:
+        raise HTTPException(400, f"format باید یکی از {', '.join(session_export.EXPORT_FORMATS)} باشه.")
+    builder, media_type, ext = spec
+    content = builder(db, link)
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="session-{link_id}.{ext}"'},
+    )
+
+
 @router.get("/analytics/current-mapping")
 def current_mapping(db: Session = Depends(get_db_session)):
     """The exact question from the spec: which agents are using which LLM
@@ -977,8 +1107,31 @@ def search_all_chats(q: str = Query(..., min_length=1), db: Session = Depends(ge
     return storage_db.global_search(db, q)
 
 
-@router.post("/chats/{chat_id}/messages")
-def send_chat_message(chat_id: int, body: SendMessageRequest, db: Session = Depends(get_db_session)):
+@router.get("/chats/{chat_id}/context")
+def get_chat_context(chat_id: int, db: Session = Depends(get_db_session)):
+    """Context Inspector: what would fill the model's window if this chat
+    sent its next request now. Uses the runtime's real tokenizer when it's
+    online, a labeled estimate otherwise."""
+    from ..storage.db import Chat as _Chat
+
+    chat = db.get(_Chat, chat_id)
+    if chat is None:
+        raise HTTPException(404, "chat not found")
+    runtime = db.get(Runtime, chat.runtime_id)
+    endpoint = None
+    if runtime is not None:
+        status = runtime_manager.get_status(db, runtime)
+        if status.state == RuntimeState.ONLINE and status.endpoint:
+            endpoint = status.endpoint
+    return context_inspector.inspect_chat_context(db, chat, endpoint)
+
+
+def _prepare_chat_turn(db: Session, chat_id: int, content: str):
+    """Shared by the blocking and streaming send routes: 404 for an unknown
+    chat, 409 for a runtime that isn't online, then store the user's message
+    FIRST -- if anything below fails partway, the user's side of the
+    conversation (and anything the agent loop already wrote) is still saved
+    rather than lost. Returns (chat, endpoint, user_message)."""
     from ..storage.db import Chat as _Chat  # local import to avoid widening the module-level import list
 
     chat = db.get(_Chat, chat_id)
@@ -990,20 +1143,104 @@ def send_chat_message(chat_id: int, body: SendMessageRequest, db: Session = Depe
     if status.state != RuntimeState.ONLINE or not status.endpoint:
         raise HTTPException(409, f"runtime is not online (state: {status.state.value})")
 
-    # Store the user's message first: if the turn below fails partway
-    # through, the user's side of the conversation -- and anything the
-    # agent loop already wrote (earlier tool steps) -- is still saved
-    # rather than lost.
-    storage_db.add_chat_message(db, chat_id, role="user", content=body.content)
+    user_message = storage_db.add_chat_message(db, chat_id, role="user", content=content)
+    return chat, status.endpoint, user_message
 
+
+@router.post("/chats/{chat_id}/messages")
+def send_chat_message(chat_id: int, body: SendMessageRequest, db: Session = Depends(get_db_session)):
+    chat, endpoint, _ = _prepare_chat_turn(db, chat_id, body.content)
     try:
         written = agent_loop.run_agent_turn(
-            db, chat, status.endpoint, temperature=body.temperature, max_tokens=body.max_tokens
+            db, chat, endpoint, temperature=body.temperature, max_tokens=body.max_tokens
         )
     except chat_engine.ChatCompletionError as exc:
         raise HTTPException(502, str(exc))
 
     return _message_to_dict(written[-1])
+
+
+def _sse(event: str, data: dict) -> str:
+    # One JSON object per event, on a single `data:` line (json.dumps never
+    # emits a raw newline), so the client's parser never has to join lines.
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+@router.post("/chats/{chat_id}/messages/stream")
+def stream_chat_message(chat_id: int, body: SendMessageRequest, db: Session = Depends(get_db_session)):
+    """Same turn as POST /chats/{id}/messages, delivered live as
+    Server-Sent Events:
+
+        event: user     the stored user message
+        event: delta    {"text": ...} a piece of the reply as it is generated
+        event: message  a stored assistant/tool message (replaces the live text)
+        event: error    {"detail": ...} the turn failed (earlier messages stay stored)
+        event: done     {"message_ids": [...]} always the last event
+
+    Pre-flight failures (unknown chat, offline runtime) are ordinary JSON
+    4xx responses, before any stream starts. The turn runs in a worker
+    thread with its OWN database session -- the request's session belongs to
+    this request -- and a client that disconnects (closes the tab, hits
+    Stop) cancels it: text already streamed is kept, and the model stops
+    generating. A turn blocked waiting on a permission decision notices the
+    cancel only when that wait ends (its own timeout bounds it)."""
+    chat, endpoint, user_message = _prepare_chat_turn(db, chat_id, body.content)
+    chat_id_value = chat.id
+    user_event = _sse("user", _message_to_dict(user_message))
+    temperature, max_tokens = body.temperature, body.max_tokens
+
+    async def generate():
+        # An ASYNC generator on purpose: when the client disconnects Starlette
+        # cancels it, which raises CancelledError right here at the `await`
+        # and runs `finally` deterministically. (A sync generator is only
+        # closed when it is garbage-collected, which would make "Stop" depend
+        # on GC timing.)
+        loop = asyncio.get_running_loop()
+        events_q: "asyncio.Queue[Optional[tuple[str, dict]]]" = asyncio.Queue()
+        cancel = threading.Event()
+
+        def emit(item) -> None:  # called from the worker thread
+            loop.call_soon_threadsafe(events_q.put_nowait, item)
+
+        def worker() -> None:
+            ids: list[int] = []
+            try:
+                with storage_db.SessionLocal() as wdb:
+                    wchat = wdb.get(storage_db.Chat, chat_id_value)
+
+                    def on_message(m) -> None:
+                        ids.append(m.id)
+                        emit(("message", _message_to_dict(m)))
+
+                    agent_loop.run_agent_turn(
+                        wdb, wchat, endpoint, temperature=temperature, max_tokens=max_tokens,
+                        on_delta=lambda t: emit(("delta", {"text": t})),
+                        on_message=on_message, cancel=cancel,
+                    )
+            except chat_engine.ChatCompletionError as exc:
+                emit(("error", {"detail": str(exc)}))
+            except Exception:  # noqa: BLE001 - never leave the client hanging on a bug
+                emit(("error", {"detail": "internal error while generating the reply"}))
+            finally:
+                emit(("done", {"message_ids": ids}))
+                emit(None)
+
+        threading.Thread(target=worker, name=f"chat-stream-{chat_id_value}", daemon=True).start()
+        try:
+            yield user_event
+            while True:
+                item = await events_q.get()
+                if item is None:
+                    break
+                yield _sse(*item)
+        finally:
+            cancel.set()  # normal completion or a client that went away -- either way, stop the turn
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ---------------------------------------------------------------------

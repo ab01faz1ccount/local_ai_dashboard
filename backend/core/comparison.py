@@ -29,6 +29,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from . import hardware_fit
 from ..storage import db as storage_db
 from ..storage.db import MLModel
 
@@ -152,7 +153,7 @@ def _metadata_dict(model: MLModel) -> dict:
     }
 
 
-def compare_models(db: Session, model_ids: list[int]) -> dict:
+def compare_models(db: Session, model_ids: list[int], hardware: Optional[dict] = None) -> dict:
     """Builds one comparison row per requested model, in the order given.
     Skips ids that don't exist rather than raising, so a stale id in a
     saved comparison view doesn't break the whole comparison.
@@ -165,6 +166,10 @@ def compare_models(db: Session, model_ids: list[int]) -> dict:
     "this repo just doesn't publish eval results" -- checking
     connectivity once per call (instead of once per model) also avoids
     piling up redundant timeouts when it's already known to be offline.
+
+    `hardware` (runtime_manager.get_hardware_snapshot()) lets each row
+    carry a `hardware_fit` verdict against this machine; omitted -> the
+    verdict is UNKNOWN rather than the whole comparison failing.
     """
     from ..core import connectivity
 
@@ -176,9 +181,11 @@ def compare_models(db: Session, model_ids: list[int]) -> dict:
         benchmarks = None
         if model.hf_repo_id and internet_available:
             benchmarks = fetch_benchmark_data(model.hf_repo_id)
+        impact = estimate_system_impact(model)
         row = {
             "metadata": _metadata_dict(model),
-            "estimated_system_impact": estimate_system_impact(model),
+            "estimated_system_impact": impact,
+            "hardware_fit": hardware_fit.assess_from_snapshot(impact["estimated_total_mb"], hardware),
             "real_world_performance": storage_db.get_model_performance_stats(db, model.id),
             "public_benchmarks": benchmarks,
         }
