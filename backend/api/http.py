@@ -27,7 +27,11 @@ from sqlalchemy.orm import Session
 from ..core import agent_loop
 from ..core import agents as agent_backends
 from ..core import authenticity
+from ..core.config_merge import merge_config_patch
+from ..core.agents import pairing as agent_pairing
+from ..core.agents import verification as agent_verification
 from ..core import chat as chat_engine
+from ..core import chat_tasks
 from ..core import comparison
 from ..core import connectivity
 from ..core import context_inspector
@@ -286,7 +290,7 @@ def update_runtime_config(runtime_id: int, body: RuntimeConfigUpdate, db: Sessio
     if body.model_id is not None:
         rt.model_id = body.model_id
     if body.config_json is not None:
-        rt.config_json = {**rt.config_json, **body.config_json}
+        rt.config_json = merge_config_patch(rt.config_json, body.config_json)
 
     try:
         db.commit()
@@ -368,6 +372,13 @@ def get_runtime_metrics_history(
     _get_runtime_or_404(db, runtime_id)
     rows = storage_db.list_metrics_snapshots(db, runtime_id=runtime_id, since=since, limit=limit)
     return [_metrics_snapshot_to_dict(r) for r in rows]
+
+
+@router.get("/runtimes/{runtime_id}/inspect")
+def inspect_runtime(runtime_id: int, db: Session = Depends(get_db_session)):
+    """What the llama-server process REALLY did, vs what Settings says."""
+    rt = _get_runtime_or_404(db, runtime_id)
+    return runtime_manager.inspect(rt)
 
 
 @router.get("/runtimes/{runtime_id}/logs")
@@ -652,7 +663,7 @@ def update_agent_config(agent_id: int, body: AgentConfigUpdate, db: Session = De
             raise HTTPException(400, f"backend '{body.agent_backend}' شناخته‌شده نیست.")
         agent.agent_backend = body.agent_backend
     if body.config_json is not None:
-        agent.config_json = {**agent.config_json, **body.config_json}
+        agent.config_json = merge_config_patch(agent.config_json, body.config_json)
     db.commit()
     db.refresh(agent)
     return _agent_to_dict(agent)
@@ -739,15 +750,41 @@ def configure_agent(agent_id: int, body: AgentConfigureRequest, db: Session = De
         model_name = model.name if model else None
 
     try:
-        commands_ran = adapter.configure(base_url, body.api_key, model_name)
+        context_length = runtime_manager.effective_context(runtime)
+        commands_ran = adapter.configure(base_url, body.api_key, model_name, context_length)
     except RuntimeError as exc:
         raise HTTPException(400, str(exc))
+
+    # Don't trust that the writes took effect -- read every value back from
+    # the agent itself and report any key it didn't accept.
+    verification = agent_verification.verify_settings(
+        adapter, adapter.expected_settings(base_url, body.api_key, model_name, context_length)
+    )
 
     agent.default_runtime_id = runtime.id
     agent.config_json = {**agent.config_json, "configured_runtime_id": runtime.id, "configured_base_url": base_url}
     db.commit()
     db.refresh(agent)
-    return {"agent": _agent_to_dict(agent), "commands_ran": commands_ran}
+    return {"agent": _agent_to_dict(agent), "commands_ran": commands_ran, "verification": verification.to_dict()}
+
+
+@router.get("/agents/{agent_id}/pairing")
+def get_agent_pairing(agent_id: int, runtime_id: int, db: Session = Depends(get_db_session)):
+    """Is this agent really talking to this runtime? Reads the runtime's own
+    server log for inference requests that arrived since the agent's terminal
+    was opened (see core/agents/pairing.py for what this can and can't prove).
+    Cheap enough to poll every couple of seconds."""
+    if db.get(Agent, agent_id) is None:
+        raise HTTPException(404, "agent not found")
+    runtime = _get_runtime_or_404(db, runtime_id)
+    status = runtime_manager.get_status(db, runtime)
+    result = agent_pairing.pairing_monitor.poll(
+        agent_id, runtime_id, runtime_manager.get_logs(runtime, 2000), busy=runtime_manager.is_busy(runtime)
+    )
+    result["runtime_state"] = status.state.value
+    if result["status"] != "paired" and status.state != RuntimeState.ONLINE:
+        result["status"] = "runtime_offline"
+    return result
 
 
 @router.post("/runtimes/{runtime_id}/agents/{agent_id}/attach")
@@ -1003,7 +1040,12 @@ def verify_llama_cpp_path(body: PathVerifyRequest, db: Session = Depends(get_db_
     resolved = onboarding.verify_executable_path(body.path)
     if resolved:
         storage_db.update_onboarding_state(db, llama_cpp_detected=True, llama_cpp_path=resolved)
-    return {"valid": resolved is not None, "path": resolved}
+    devices = None
+    if resolved:
+        from ..core.engine.llama_cpp_caps import probe_devices
+
+        devices = probe_devices(resolved)  # can this build see a GPU at all?
+    return {"valid": resolved is not None, "path": resolved, "devices": devices}
 
 
 @router.get("/onboarding/install-guidance")
@@ -1086,6 +1128,9 @@ def promote_chat(chat_id: int, body: ChatPromoteRequest, db: Session = Depends(g
 
 @router.delete("/chats/{chat_id}")
 def delete_chat(chat_id: int, db: Session = Depends(get_db_session)):
+    # Stop any reply still being generated for this chat BEFORE its rows go --
+    # otherwise the worker keeps calling the model and tools for a dead chat.
+    chat_tasks.cancel_chat(chat_id)
     if not storage_db.delete_chat(db, chat_id):
         raise HTTPException(404, "chat not found")
     return {"deleted": True}
@@ -1198,6 +1243,7 @@ def stream_chat_message(chat_id: int, body: SendMessageRequest, db: Session = De
         loop = asyncio.get_running_loop()
         events_q: "asyncio.Queue[Optional[tuple[str, dict]]]" = asyncio.Queue()
         cancel = threading.Event()
+        chat_tasks.register(chat_id_value, cancel)  # so deleting the chat can stop this turn
 
         def emit(item) -> None:  # called from the worker thread
             loop.call_soon_threadsafe(events_q.put_nowait, item)
@@ -1235,6 +1281,7 @@ def stream_chat_message(chat_id: int, body: SendMessageRequest, db: Session = De
                 yield _sse(*item)
         finally:
             cancel.set()  # normal completion or a client that went away -- either way, stop the turn
+            chat_tasks.unregister(chat_id_value, cancel)
 
     return StreamingResponse(
         generate(),

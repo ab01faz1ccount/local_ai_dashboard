@@ -48,7 +48,13 @@ class AgentAdapter(ABC):
         """Checks whether this agent's CLI is installed on this machine."""
 
     @abstractmethod
-    def configure(self, runtime_base_url: str, api_key: str, model_name: Optional[str] = None) -> list[str]:
+    def configure(
+        self,
+        runtime_base_url: str,
+        api_key: str,
+        model_name: Optional[str] = None,
+        context_length: Optional[int] = None,
+    ) -> list[str]:
         """Runs whatever this agent's own CLI needs to point itself at
         our runtime instead of a cloud model. Returns the commands it
         actually ran (as strings), for a confirmation log in the UI.
@@ -61,6 +67,42 @@ class AgentAdapter(ABC):
         """The argv to spawn this agent's real interactive CLI under a
         pty -- e.g. ["hermes"] or, to resume a prior session,
         ["hermes", "-r", session_id]."""
+
+    # -- optional: lets the app PROVE configure() took effect -----------------
+    # Writing config is only half the job: an agent can accept a `config set`
+    # and still ignore it (wrong key name -- Hermes reads `model.default`, not
+    # `model.name` -- or a stale default winning). An adapter that implements
+    # these two lets core/agents/verification.py read every value back and
+    # report exactly which key didn't stick. Both default to "unsupported",
+    # which verification reports as `unreadable` rather than as a failure.
+
+    # Settings whose value must never be compared/displayed (API keys...).
+    sensitive_settings: frozenset = frozenset()
+
+    def expected_settings(
+        self,
+        runtime_base_url: str,
+        api_key: str,
+        model_name: Optional[str] = None,
+        context_length: Optional[int] = None,
+    ) -> dict[str, str]:
+        """The agent-side settings (key -> value) that make this agent talk
+        to our runtime. This is the single source of truth: configure()
+        writes exactly these and verification reads exactly these back.
+        `context_length` is the context window the runtime really serves per
+        request (None = unknown); an agent that has such a setting should be
+        told, or it plans against its own default, not the server's."""
+        return {}
+
+    def launch_env(self, api_key: str = "sk-no-key") -> dict[str, str]:
+        """Extra environment variables the agent's process needs (e.g. a key an
+        agent reads from its environment instead of storing in its config)."""
+        return {}
+
+    def read_setting(self, key: str) -> Optional[str]:
+        """The agent's own current value for `key`, as text. Raise
+        RuntimeError if it can't be read (command failed / unsupported)."""
+        raise RuntimeError(f"{self.display_name} adapter can't read settings back")
 
 
 _ADAPTERS: dict[str, AgentAdapter] = {}

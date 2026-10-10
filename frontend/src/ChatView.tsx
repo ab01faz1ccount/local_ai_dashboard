@@ -104,6 +104,8 @@ export function ChatView({ initialChatId }: { initialChatId?: number | null } = 
   }
 
   async function handleDeleteChat(id: number) {
+    // a reply still streaming for this chat must stop with it
+    if (selectedChatId === id) abortRef.current?.abort();
     await api.deleteChat(id);
     setChats((prev) => prev.filter((c) => c.id !== id));
     if (selectedChatId === id) setSelectedChatId(null);
@@ -314,6 +316,7 @@ export function ChatView({ initialChatId }: { initialChatId?: number | null } = 
 
               {viewMode === "terminal" && hasRealBackend && selectedAgent ? (
                 <AgentTerminal
+                  key={selectedChat.id}
                   agentId={selectedAgent.id}
                   runtimeId={selectedChat.runtime_id}
                   brandColor={backendInfo?.brand_color ?? "#888888"}

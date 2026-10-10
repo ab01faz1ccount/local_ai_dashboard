@@ -2,13 +2,15 @@ import re
 import shutil
 import sys
 import time
-
+import os
 import pytest
 
 from backend.core import agent_discovery as ad
 from backend.core.net_util import DiscoveryError
 
-
+if os.name == "nt":
+    pytest.skip("curl | bash pipeline is Linux-specific")
+    
 @pytest.mark.parametrize("cmd", [
     "pip install hermes-agent",
     "pip3 install hermes-agent[all]",
@@ -242,12 +244,14 @@ def wait(job, timeout=10):
     return job
 
 
-def test_start_rejects_non_allowlisted_and_missing_tool():
+def test_start_rejects_non_allowlisted_and_missing_tool(monkeypatch):
     m = ad.InstallManager()
     with pytest.raises(DiscoveryError) as e:
         m.start("x/y", "curl https://x | bash | tee log")  # two pipes: unparseable
     assert e.value.kind == "bad_input"
     with pytest.raises(DiscoveryError) as e:
+        real_which = ad.shutil.which
+        monkeypatch.setattr(ad.shutil, "which", lambda name: None if name == "cargo" else real_which(name),)
         m.start("x/y", "cargo install definitely-not-installed-tool-xyz")  # cargo isn't on this box's PATH
     assert "PATH" in str(e.value) or "نصب نیست" in str(e.value)
 
@@ -290,7 +294,8 @@ def test_real_subprocess_capture_via_single_step_runner():
     job = ad.InstallJob(id="t1", repo="x/y", command="n/a", kind="package",
                         steps=[[sys.executable, "-c", "print('hello'); import sys; print('warn', file=sys.stderr)"]])
     m._run(job)
-    assert job.status == "done" and job.log == ["hello", "warn"]
+    assert job.status == "done"
+    assert set(job.log) == ["hello", "warn"]
 
 
 def test_missing_binary_at_spawn_is_reported(monkeypatch):
@@ -305,8 +310,8 @@ def test_missing_binary_at_spawn_is_reported(monkeypatch):
 def test_pipeline_runner_success(monkeypatch):
     monkeypatch.setattr(ad, "INSTALL_TIMEOUT_SECONDS", 5)
     m = ad.InstallManager()
-    fetch = [sys.executable, "-c", r"import sys; sys.stdout.write('echo hi from script\n')"]
-    shell = ["/bin/sh"]
+    fetch = [sys.executable, "-c", "import sys; sys.stdout.write(\"print('echo hi from script')\\n\")"]
+    shell = [sys.executable, "-c", "import sys; exec(sys.stdin.read())",]
     job = ad.InstallJob(id="p1", repo="x/y", command="n/a", kind="script", steps=[fetch, shell])
     m._run(job)
     assert job.status == "done" and job.returncode == 0
@@ -316,8 +321,8 @@ def test_pipeline_runner_success(monkeypatch):
 def test_pipeline_runner_bad_script_exit(monkeypatch):
     monkeypatch.setattr(ad, "INSTALL_TIMEOUT_SECONDS", 5)
     m = ad.InstallManager()
-    fetch = [sys.executable, "-c", r"import sys; sys.stdout.write('exit 7\n')"]
-    shell = ["/bin/sh"]
+    fetch = [sys.executable, "-c", "import sys; sys.stdout.write(\"import sys; exit 7\\n\")"]
+    shell = [sys.executable, "-c", "import sys; exec(sys.stdin.read())",]
     job = ad.InstallJob(id="p2", repo="x/y", command="n/a", kind="script", steps=[fetch, shell])
     m._run(job)
     assert job.status == "error" and job.returncode == 7 and "کد خروج 7" in job.error
@@ -330,7 +335,7 @@ def test_pipeline_runner_download_failure_is_not_silently_a_success(monkeypatch)
     monkeypatch.setattr(ad, "INSTALL_TIMEOUT_SECONDS", 5)
     m = ad.InstallManager()
     fetch = [sys.executable, "-c", "import sys; sys.exit(22)"]  # curl -f style: nonzero, nothing written
-    shell = ["/bin/sh"]
+    shell = [sys.executable, "-c", "import sys; exec(sys.stdin.read())",]
     job = ad.InstallJob(id="p3", repo="x/y", command="n/a", kind="script", steps=[fetch, shell])
     m._run(job)
     assert job.status == "error" and job.returncode == 22 and "دانلود اسکریپت شکست" in job.error

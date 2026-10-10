@@ -141,6 +141,58 @@ class RuntimeManager:
         engine = self._get_or_create_engine(runtime)
         return engine.get_metrics()
 
+    def effective_context(self, runtime: Runtime) -> Optional[int]:
+        """The context window ONE request can use on this runtime. llama-server
+        splits `--ctx-size` across its parallel slots, so this is the per-slot
+        figure: what the live server reports if it is up, else config."""
+        engine = self._get_or_create_engine(runtime)
+        props = engine.fetch_props() if hasattr(engine, "fetch_props") else None
+        if props:
+            n_ctx = (props.get("default_generation_settings") or {}).get("n_ctx")
+            if isinstance(n_ctx, int) and n_ctx > 0:
+                return n_ctx
+        cfg = runtime.config_json or {}
+        try:
+            ctx = int(cfg.get("ctx_size"))
+            slots = int(cfg.get("parallel_slots") or 1)
+        except (TypeError, ValueError):
+            return None
+        return ctx // max(slots, 1) if ctx > 0 else None
+
+    def is_busy(self, runtime: Runtime) -> Optional[bool]:
+        """True while the server is processing a request (from /slots); None
+        when that can't be known."""
+        engine = self._get_or_create_engine(runtime)
+        if engine.get_status().state != RuntimeState.ONLINE:
+            return None
+        metrics = engine.get_metrics()
+        return None if metrics.active_slots is None else metrics.active_slots > 0
+
+    def inspect(self, runtime: Runtime) -> dict:
+        """Proof of what the process really did: the command it was launched
+        with, what it reported at startup, and what it answers on /props --
+        compared with the config it was started with. See engine/runtime_inspect."""
+        from .engine import runtime_inspect
+        from .engine.llama_cpp_caps import probe_devices
+
+        engine = self._get_or_create_engine(runtime)
+        started_with = engine.last_config() if hasattr(engine, "last_config") else {}
+        current = {**runtime.config_json, "host": runtime.host, "port": runtime.port}
+        report = runtime_inspect.build_report(
+            config=started_with or current,
+            command=engine.last_command() if hasattr(engine, "last_command") else None,
+            log_lines=engine.tail_logs(2000),
+            props=engine.fetch_props() if hasattr(engine, "fetch_props") else None,
+            devices=probe_devices(runtime.executable_path),
+        )
+        # settings edited after this process started don't apply until restart
+        report["config_changed_since_start"] = bool(started_with) and any(
+            started_with.get(k) != current.get(k)
+            for k in set(started_with) | set(current)
+            if k not in ("model_path",)
+        )
+        return report
+
     def get_logs(self, runtime: Runtime, n: int = 200) -> list[str]:
         engine = self._get_or_create_engine(runtime)
         return engine.tail_logs(n)

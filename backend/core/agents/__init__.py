@@ -12,6 +12,7 @@ means adding its import here, nothing else.
 from __future__ import annotations
 
 from . import hermes_adapter  # noqa: F401  (import triggers registration)
+from . import open_interpreter_adapter  # noqa: F401
 from .base import AgentAdapter, AgentBackendInfo, get_adapter, list_adapters, register_adapter
 
 __all__ = [

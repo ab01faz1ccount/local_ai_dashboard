@@ -17,6 +17,61 @@ from urllib.error import URLError
 
 from ..platform.base import PlatformProvider
 from .base import EngineMetrics, EngineStatus, InferenceEngine, RuntimeState
+from .llama_cpp_caps import flash_attn_takes_value
+
+_TRUE_WORDS = {"on", "true", "1", "yes"}
+_FALSE_WORDS = {"off", "false", "0", "no"}
+
+
+def tri_state(value) -> Optional[bool]:
+    """True / False for an explicit choice, None for "unset -- leave llama.cpp's
+    own default". Accepts the booleans older saved configs hold as well as the
+    "on"/"off" strings the Settings dropdowns write; anything else (incl. ""
+    and "auto") is "unset"."""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return None
+    word = str(value).strip().lower()
+    if word in _TRUE_WORDS:
+        return True
+    if word in _FALSE_WORDS:
+        return False
+    return None
+
+
+def flash_attn_mode(value) -> Optional[str]:
+    """"on" / "off" / "auto", or None for "don't pass the flag". A legacy
+    `False` (the old checkbox, unticked) stays "don't pass it" -- that's what
+    it always meant -- while an explicit "off" really passes off."""
+    if value is None or value is False:
+        return None
+    if value is True:
+        return "on"
+    word = str(value).strip().lower()
+    if word == "auto":
+        return "auto"
+    if word in _TRUE_WORDS:
+        return "on"
+    if word in _FALSE_WORDS:
+        return "off"
+    return None
+
+
+def normalize_extra_args(value) -> list[str]:
+    """Extra llama-server arguments exactly as the user gave them, one argv
+    entry per line (so a JSON value like {"enable_thinking":false} stays one
+    argument -- no shell splitting). Accepts the list form the API stores or
+    a raw multi-line string; blank entries are dropped."""
+    if value is None:
+        return []
+    items = value.splitlines() if isinstance(value, str) else list(value)
+    out = []
+    for item in items:
+        text = str(item).strip()
+        if text:
+            out.append(text)
+    return out
 
 
 class LlamaCppEngine(InferenceEngine):
@@ -28,6 +83,7 @@ class LlamaCppEngine(InferenceEngine):
         self._state: RuntimeState = RuntimeState.OFFLINE
         self._error_message: Optional[str] = None
         self._started_at: Optional[float] = None
+        self._last_command: Optional[list[str]] = None
 
     # -- lifecycle --------------------------------------------------------
 
@@ -41,6 +97,7 @@ class LlamaCppEngine(InferenceEngine):
         self._error_message = None
 
         args = self._build_args(config)
+        self._last_command = [self._executable_path, *args]
         try:
             self._pid = self._platform.start_process(self._executable_path, args)
         except Exception as exc:
@@ -130,6 +187,28 @@ class LlamaCppEngine(InferenceEngine):
             extra={"raw_slots": slots},
         )
 
+    def last_command(self) -> Optional[list[str]]:
+        """The exact argv this engine last launched (None before any start)."""
+        return list(self._last_command) if self._last_command else None
+
+    def last_config(self) -> dict:
+        """The config the process was last STARTED with (may differ from what
+        Settings holds now)."""
+        return dict(self._config)
+
+    def fetch_props(self) -> Optional[dict]:
+        """llama-server's live `/props` (the settings it is actually running
+        with). None when it isn't reachable -- never raises."""
+        status = self.get_status()
+        if status.state != RuntimeState.ONLINE or not status.endpoint:
+            return None
+        try:
+            with urlrequest.urlopen(f"{status.endpoint}/props", timeout=3) as resp:
+                data = json.loads(resp.read())
+        except (URLError, TimeoutError, ValueError, OSError):
+            return None
+        return data if isinstance(data, dict) else None
+
     def tail_logs(self, n: int = 200) -> list[str]:
         if self._pid is None:
             return []
@@ -173,8 +252,12 @@ class LlamaCppEngine(InferenceEngine):
         # to the GPU at all.
         add("--cache-type-k", "cache_type_k")
         add("--cache-type-v", "cache_type_v")
-        if "kv_offload" in config and config["kv_offload"] is not None:
-            args.append("--kv-offload" if config["kv_offload"] else "--no-kv-offload")
+        # Tri-state on purpose: unset leaves llama.cpp's default (offload ON).
+        # Only an explicit "off" may pass --no-kv-offload -- KV cache in system
+        # RAM is a classic cause of a "connected but crawling" model.
+        kv_offload = tri_state(config.get("kv_offload"))
+        if kv_offload is not None:
+            args.append("--kv-offload" if kv_offload else "--no-kv-offload")
 
         # RoPE / YaRN -- leave the model's own defaults alone unless the
         # user explicitly set one of these (matches upstream's own
@@ -202,14 +285,20 @@ class LlamaCppEngine(InferenceEngine):
             args.append("--jinja")
         if config.get("embedding"):
             args.append("--embedding")
-        if config.get("flash_attn"):
-            args.append("--flash-attn")
+        fa_mode = flash_attn_mode(config.get("flash_attn"))
+        if fa_mode is not None:
+            if flash_attn_takes_value(self._executable_path):
+                # newer builds: `--flash-attn [on|off|auto]`
+                args.extend(["--flash-attn", fa_mode])
+            elif fa_mode == "on":
+                # older builds: a bare switch (it can only mean "on")
+                args.append("--flash-attn")
         if config.get("mlock"):
             args.append("--mlock")
         if config.get("no_mmap"):
             args.append("--no-mmap")
 
-        args.extend(config.get("extra_args", []))
+        args.extend(normalize_extra_args(config.get("extra_args")))
         return args
 
     def _wait_for_health(self, timeout: float) -> bool:

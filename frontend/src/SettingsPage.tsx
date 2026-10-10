@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { api, type AgentBackendInfo, type AgentSummary, type RuntimeSummary } from "./api";
+import { api, type AgentBackendInfo, type AgentSummary, type ConfigCheckReport, type RuntimeSummary } from "./api";
 import { BrowseTab } from "./components/BrowseTab";
-
-type ConfigValue = string | number | boolean | undefined;
-type ConfigForm = Record<string, ConfigValue>;
+import { RuntimeLogPanel } from "./components/RuntimeLogPanel";
+import { configProblems, configSummary } from "./pairing-utils";
+import { configToForm, formToConfigPatch, type ConfigForm, type ConfigValue } from "./runtime-config-utils";
 
 function toStr(v: unknown): string {
   if (v == null) return "";
@@ -11,21 +11,9 @@ function toStr(v: unknown): string {
   return String(v);
 }
 
-/** Strips empty/undefined fields so Save only sends what the user
- * actually set -- the backend merges into the existing config_json, so
- * an omitted field here means "leave whatever it already was alone". */
-function cleanConfig(form: ConfigForm): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(form)) {
-    if (v === "" || v === undefined) continue;
-    out[k] = v;
-  }
-  return out;
-}
-
 const RUNTIME_FIELD_GROUPS: {
   title: string;
-  fields: { key: string; label: string; type: "text" | "number" | "checkbox" | "select"; options?: string[] }[];
+  fields: { key: string; label: string; type: "text" | "number" | "checkbox" | "select" | "textarea"; options?: string[] }[];
 }[] = [
   {
     title: "Hardware & Memory",
@@ -35,7 +23,7 @@ const RUNTIME_FIELD_GROUPS: {
       { key: "ctx_size", label: "Context Size (-c)", type: "number" },
       { key: "cache_type_k", label: "KV Cache Type — K", type: "select", options: ["", "f16", "bf16", "q8_0", "q4_0", "q4_1", "iq4_nl", "q5_0", "q5_1"] },
       { key: "cache_type_v", label: "KV Cache Type — V", type: "select", options: ["", "f16", "bf16", "q8_0", "q4_0", "q4_1", "iq4_nl", "q5_0", "q5_1"] },
-      { key: "kv_offload", label: "KV Cache Offload to GPU", type: "checkbox" },
+      { key: "kv_offload", label: "KV Cache Offload to GPU (blank = llama.cpp default = on)", type: "select", options: ["", "on", "off"] },
       { key: "device", label: "Device", type: "text" },
       { key: "tensor_split", label: "GPU Split (--tensor-split)", type: "text" },
     ],
@@ -43,7 +31,7 @@ const RUNTIME_FIELD_GROUPS: {
   {
     title: "Performance",
     fields: [
-      { key: "flash_attn", label: "Flash Attention", type: "checkbox" },
+      { key: "flash_attn", label: "Flash Attention (blank = don't pass the flag)", type: "select", options: ["", "auto", "on", "off"] },
       { key: "batch_size", label: "Batch Size (-b)", type: "number" },
       { key: "ubatch_size", label: "U-Batch Size (-ub)", type: "number" },
       { key: "parallel_slots", label: "Parallel Slots (-np)", type: "number" },
@@ -79,6 +67,16 @@ const RUNTIME_FIELD_GROUPS: {
       { key: "yarn_beta_slow", label: "YaRN Beta Slow", type: "number" },
       { key: "jinja", label: "Jinja chat template (required for agent tool calling)", type: "checkbox" },
       { key: "chat_template", label: "Chat Template", type: "text" },
+    ],
+  },
+  {
+    title: "Advanced",
+    fields: [
+      {
+        key: "extra_args",
+        label: "Extra llama-server arguments — one per line (e.g. --reasoning ⏎ off)",
+        type: "textarea",
+      },
     ],
   },
 ];
@@ -182,6 +180,7 @@ export function SettingsPage() {
   const [connectRuntimeId, setConnectRuntimeId] = useState<number | "">("");
   const [connecting, setConnecting] = useState(false);
   const [connectLog, setConnectLog] = useState<string[] | null>(null);
+  const [connectVerification, setConnectVerification] = useState<ConfigCheckReport | null>(null);
 
   useEffect(() => {
     api.listRuntimes().then(setRuntimes);
@@ -192,14 +191,14 @@ export function SettingsPage() {
   useEffect(() => {
     if (selectedRuntimeId === "") return;
     const rt = runtimes.find((r) => r.id === selectedRuntimeId);
-    if (rt) setRuntimeForm(rt.config_json as ConfigForm);
+    if (rt) setRuntimeForm(configToForm(rt.config_json));
   }, [selectedRuntimeId, runtimes]);
 
   useEffect(() => {
     if (selectedAgentId === "") return;
     const ag = agents.find((a) => a.id === selectedAgentId);
     if (ag) {
-      setAgentForm(ag.config_json as ConfigForm);
+      setAgentForm(configToForm(ag.config_json));
       setAgentBackendDraft(ag.agent_backend);
     }
     setConnectLog(null);
@@ -218,7 +217,10 @@ export function SettingsPage() {
     setRuntimeSaving(true);
     setRuntimeSaved(false);
     try {
-      const updated = await api.updateRuntimeConfig(selectedRuntimeId, { config_json: cleanConfig(runtimeForm) });
+      const original = runtimes.find((r) => r.id === selectedRuntimeId)?.config_json;
+      const updated = await api.updateRuntimeConfig(selectedRuntimeId, {
+        config_json: formToConfigPatch(original, runtimeForm),
+      });
       setRuntimes((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
       setRuntimeSaved(true);
     } finally {
@@ -231,9 +233,10 @@ export function SettingsPage() {
     setAgentSaving(true);
     setAgentSaved(false);
     try {
+      const original = agents.find((a) => a.id === selectedAgentId)?.config_json;
       const updated = await api.updateAgentConfig(selectedAgentId, {
         agent_backend: agentBackendDraft,
-        config_json: cleanConfig(agentForm),
+        config_json: formToConfigPatch(original, agentForm),
       });
       setAgents((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
       setAgentSaved(true);
@@ -247,10 +250,12 @@ export function SettingsPage() {
     setConnecting(true);
     setAgentError(null);
     setConnectLog(null);
+    setConnectVerification(null);
     try {
       const result = await api.configureAgent(selectedAgentId, { runtime_id: connectRuntimeId });
       setAgents((prev) => prev.map((a) => (a.id === result.agent.id ? result.agent : a)));
       setConnectLog(result.commands_ran);
+      setConnectVerification(result.verification ?? null);
     } catch (err) {
       setAgentError(err instanceof Error ? err.message : "Could not connect this agent.");
     } finally {
@@ -332,6 +337,7 @@ export function SettingsPage() {
                 <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
                   روی start/restart بعدی اعمال می‌شه، نه روی پردازش الان در حال اجرا.
                 </p>
+                <RuntimeLogPanel runtimeId={selectedRuntimeId as number} />
                 {RUNTIME_FIELD_GROUPS.map((group) => (
                   <div className="panel git-diff-summary" key={group.title}>
                     <div className="section-heading">
@@ -431,6 +437,23 @@ export function SettingsPage() {
                             <li key={i}>{cmd}</li>
                           ))}
                         </ul>
+                      )}
+                      {connectVerification && (
+                        <div data-testid="connect-verification" style={{ marginTop: 8, fontSize: 13 }}>
+                          {(() => {
+                            const s = configSummary(connectVerification);
+                            return s ? (
+                              <div>
+                                <span aria-hidden="true">{s.icon}</span> {s.text}
+                              </div>
+                            ) : null;
+                          })()}
+                          {configProblems(connectVerification).map((p) => (
+                            <div key={p} className="mono">
+                              {p}
+                            </div>
+                          ))}
+                        </div>
                       )}
                       <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>
                         برای ترمینال واقعی، از تب Chats چتی که این agent بهش وصله رو باز کن.

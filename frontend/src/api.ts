@@ -328,6 +328,36 @@ export interface AgentBackendInfo {
   detected_version: string | null;
 }
 
+// ---- Agent <-> runtime proof (config read-back + live request watch) ----
+
+export interface ConfigCheckItem {
+  key: string;
+  status: "ok" | "mismatch" | "unreadable" | "skipped";
+  expected: string | null;
+  actual: string | null;
+  detail: string | null;
+}
+
+/** Read back from the agent itself after configure(): did each setting stick? */
+export interface ConfigCheckReport {
+  backend_id: string;
+  /** no contradiction found (unknown is not a contradiction) */
+  ok: boolean;
+  /** at least one value positively confirmed and none contradicted */
+  verified: boolean;
+  checks: ConfigCheckItem[];
+}
+
+/** Has the runtime's own server log shown an inference request from the agent? */
+export interface AgentPairing {
+  watching: boolean;
+  status: "not_watching" | "waiting" | "in_flight" | "paired" | "runtime_offline";
+  requests: number;
+  rebaselined?: boolean;
+  runtime_state?: string;
+  verification: ConfigCheckReport | null;
+}
+
 // ---- Settings -> Browse (offline picker + online discovery) ----
 
 export interface FsEntry {
@@ -755,6 +785,40 @@ export interface ContextInspection {
   largest_items: ContextLargestItem[];
 }
 
+export interface DeviceProbe {
+  /** false = the binary could not be run (unknown, NOT "no GPU") */
+  probed: boolean;
+  devices: { id: string; description: string; is_gpu: boolean }[];
+  gpus: { id: string; description: string; is_gpu: boolean }[];
+}
+
+export interface RuntimeInspectCheck {
+  key: string;
+  status: "ok" | "mismatch" | "unknown";
+  expected: string | number | null;
+  actual: string | number | null;
+  detail: string;
+}
+
+/** GET /runtimes/{id}/inspect: what llama-server REALLY did vs. Settings. */
+export interface RuntimeInspect {
+  launch_command: string[] | null;
+  placement: "gpu" | "partial" | "cpu" | "unknown";
+  checks: RuntimeInspectCheck[];
+  warnings: string[];
+  ok: boolean;
+  devices: DeviceProbe | null;
+  config_changed_since_start?: boolean;
+  observed: {
+    threads: number | null;
+    slots: number | null;
+    ctx_per_slot: number | null;
+    layers_offloaded: number | null;
+    layers_total: number | null;
+    saw_model_load: boolean;
+  };
+}
+
 export const api = {
   bootstrapToken: () => request<{ access_token: string }>("/api/v1/auth/bootstrap-token"),
 
@@ -817,10 +881,12 @@ export const api = {
   deleteAgent: (id: number) => request<{ deleted: boolean }>(`/api/v1/agents/${id}`, { method: "DELETE" }),
   listAgentBackends: () => request<AgentBackendInfo[]>("/api/v1/agent-backends"),
   configureAgent: (id: number, body: { runtime_id: number; model_name?: string; api_key?: string }) =>
-    request<{ agent: AgentSummary; commands_ran: string[] }>(`/api/v1/agents/${id}/configure`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
+    request<{ agent: AgentSummary; commands_ran: string[]; verification?: ConfigCheckReport }>(
+      `/api/v1/agents/${id}/configure`,
+      { method: "POST", body: JSON.stringify(body) }
+    ),
+  getAgentPairing: (agentId: number, runtimeId: number) =>
+    request<AgentPairing>(`/api/v1/agents/${agentId}/pairing?runtime_id=${runtimeId}`),
   attachAgent: (runtimeId: number, agentId: number) =>
     request(`/api/v1/runtimes/${runtimeId}/agents/${agentId}/attach`, { method: "POST" }),
   detachSession: (linkId: number) => request(`/api/v1/sessions/${linkId}/detach`, { method: "POST" }),
@@ -838,8 +904,9 @@ export const api = {
   patchOnboardingState: (body: Partial<OnboardingState>) =>
     request<OnboardingState>("/api/v1/onboarding/state", { method: "PATCH", body: JSON.stringify(body) }),
   detectLlamaCpp: () => request<OnboardingState>("/api/v1/onboarding/detect-llama-cpp", { method: "POST" }),
+  getRuntimeInspect: (id: number) => request<RuntimeInspect>(`/api/v1/runtimes/${id}/inspect`),
   verifyExecutablePath: (path: string) =>
-    request<{ valid: boolean; path: string | null }>("/api/v1/onboarding/verify-path", {
+    request<{ valid: boolean; path: string | null; devices?: DeviceProbe | null }>("/api/v1/onboarding/verify-path", {
       method: "POST",
       body: JSON.stringify({ path }),
     }),

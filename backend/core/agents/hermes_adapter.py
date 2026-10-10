@@ -7,7 +7,9 @@ recipe for wiring Hermes Agent (Nous Research) to a local llama-server:
     hermes config set model.provider custom
     hermes config set model.base_url http://127.0.0.1:PORT/v1
     hermes config set LLAMA_CPP_API_KEY sk-no-key
-    hermes config set model.name <name>        (optional)
+    hermes config set model.default <name>     (Hermes's documented model-id key;
+                                                `model.name` is not one)
+    hermes config set model.api_key sk-no-key
 
 `--jinja` on the llama-server side (required for Hermes's tool calling)
 is NOT this adapter's concern -- that's a runtime launch flag, already
@@ -25,6 +27,7 @@ from . import paths
 from .base import AgentAdapter, AgentBackendInfo, register_adapter
 
 HERMES_TIMEOUT_SECONDS = 15
+LOCAL_MODEL_PLACEHOLDER = "local-model"
 
 
 class HermesAdapter(AgentAdapter):
@@ -34,6 +37,7 @@ class HermesAdapter(AgentAdapter):
     # screenshot) -- used only to theme our terminal panel's chrome; the
     # actual banner/colors the user sees come from the real process.
     brand_color = "#f5a623"
+    sensitive_settings = frozenset({"model.api_key", "LLAMA_CPP_API_KEY"})
 
     def _executable(self) -> Optional[str]:
         # A path the user picked through the offline browser wins over
@@ -58,7 +62,56 @@ class HermesAdapter(AgentAdapter):
 
         return AgentBackendInfo(self.backend_id, self.display_name, self.brand_color, True, path, version)
 
-    def configure(self, runtime_base_url: str, api_key: str, model_name: Optional[str] = None) -> list[str]:
+    def expected_settings(
+        self,
+        runtime_base_url: str,
+        api_key: str,
+        model_name: Optional[str] = None,
+        context_length: Optional[int] = None,
+    ) -> dict[str, str]:
+        # Keys per Hermes's own "Custom & Self-Hosted LLM Providers" docs:
+        #   model.default  -- the model id (`model.name` is NOT a documented
+        #                     key, so setting only that left the stock default
+        #                     "claude-opus-4.6" in place -- the exact symptom
+        #                     of an agent that never actually switched).
+        #   model.api_key  -- inline key for a custom endpoint.
+        # `LLAMA_CPP_API_KEY` is kept from the original recipe; it's harmless
+        # if unused. llama-server in single-model mode ignores the model id,
+        # so a placeholder is fine when the runtime has no registered model --
+        # but it must still overwrite the cloud default.
+        settings = {
+            "model.provider": "custom",
+            "model.base_url": runtime_base_url,
+            "model.default": model_name or LOCAL_MODEL_PLACEHOLDER,
+            "model.api_key": api_key,
+            "LLAMA_CPP_API_KEY": api_key,
+        }
+        if context_length:
+            # Hermes sizes its prompt/compaction against this; left at its own
+            # default it can plan for a window the local server doesn't have.
+            settings["model.context_length"] = str(int(context_length))
+        return settings
+
+    def read_setting(self, key: str) -> Optional[str]:
+        exe = self._executable()
+        if not exe:
+            raise RuntimeError("hermes CLI پیدا نشد.")
+        cmd = [exe, "config", "get", key]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=HERMES_TIMEOUT_SECONDS)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise RuntimeError(f"`{' '.join(cmd)}` failed: {exc}") from exc
+        if result.returncode != 0:
+            raise RuntimeError(f"`{' '.join(cmd)}` failed: {(result.stderr or result.stdout).strip()}")
+        return result.stdout.strip()
+
+    def configure(
+        self,
+        runtime_base_url: str,
+        api_key: str,
+        model_name: Optional[str] = None,
+        context_length: Optional[int] = None,
+    ) -> list[str]:
         exe = self._executable()
         if not exe:
             raise RuntimeError(
@@ -66,12 +119,9 @@ class HermesAdapter(AgentAdapter):
             )
 
         commands = [
-            [exe, "config", "set", "model.provider", "custom"],
-            [exe, "config", "set", "model.base_url", runtime_base_url],
-            [exe, "config", "set", "LLAMA_CPP_API_KEY", api_key],
+            [exe, "config", "set", key, value]
+            for key, value in self.expected_settings(runtime_base_url, api_key, model_name, context_length).items()
         ]
-        if model_name:
-            commands.append([exe, "config", "set", "model.name", model_name])
 
         ran: list[str] = []
         for cmd in commands:

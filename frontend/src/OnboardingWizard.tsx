@@ -11,6 +11,7 @@ import {
 } from "./api";
 import { FileBrowserDialog } from "./components/FileBrowserDialog";
 import { OnlineModelSearch } from "./components/OnlineModelSearch";
+import { deviceWarning } from "./inspect-utils";
 
 const STEP_COUNT = 4;
 const START_POLL_TIMEOUT_MS = 20000;
@@ -138,6 +139,8 @@ export function OnboardingWizard({
         setError("That path doesn't point to a real file. Double-check it and try again.");
       } else if (result.path) {
         setExecutablePath(result.path);
+        const warn = deviceWarning(result.devices);
+        if (warn) setError(warn); // valid file, but this build can't see a GPU
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not verify that path.");

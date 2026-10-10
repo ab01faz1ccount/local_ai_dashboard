@@ -108,6 +108,13 @@ type View = "dashboard" | "models" | "projects" | "chats" | "sessions" | "analyt
 function MainShell() {
   const [view, setView] = useState<View>("dashboard");
   const [pendingChatId, setPendingChatId] = useState<number | null>(null);
+  // The Chats page is mounted on first visit and then only hidden: a live agent
+  // terminal (a real process) used to be killed and restarted every time the
+  // user looked at another page and came back.
+  const [chatsVisited, setChatsVisited] = useState(false);
+  useEffect(() => {
+    if (view === "chats") setChatsVisited(true);
+  }, [view]);
 
   function openChat(chatId: number) {
     setPendingChatId(chatId);
@@ -158,7 +165,11 @@ function MainShell() {
       {view === "dashboard" && <Dashboard onAddRuntime={() => setView("setup")} />}
       {view === "models" && <ModelsPage />}
       {view === "projects" && <ProjectsPage onOpenChat={openChat} />}
-      {view === "chats" && <ChatView initialChatId={pendingChatId} />}
+      {(view === "chats" || chatsVisited) && (
+        <div data-testid="chats-page-host" style={{ display: view === "chats" ? "contents" : "none" }}>
+          <ChatView initialChatId={pendingChatId} />
+        </div>
+      )}
       {view === "sessions" && <SessionsPage />}
       {view === "analytics" && <AnalyticsPage />}
       {view === "mcp" && <McpPage />}

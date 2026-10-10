@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import queue
 from dataclasses import asdict
 
@@ -30,6 +31,8 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from ..core import agents as agent_backends
 from ..core import events as events_module
+from ..core.agents import pairing as agent_pairing
+from ..core.agents import verification as agent_verification
 from ..core.agents.pty_session import PtySession
 from ..core.runtime_manager import runtime_manager
 from ..core.security import get_or_create_access_token
@@ -171,21 +174,50 @@ async def agent_terminal_ws(
 
     base_url = f"http://{runtime.host}:{runtime.port}/v1"
 
+    context_length = await asyncio.get_event_loop().run_in_executor(None, runtime_manager.effective_context, runtime)
+
     # Auto-configure every time a terminal session opens -- idempotent
     # (re-running `hermes config set` with the same values is harmless),
     # and guarantees the agent is actually pointed at *this* runtime even
     # if it was last configured against a different one.
     try:
         await asyncio.get_event_loop().run_in_executor(
-            None, adapter.configure, base_url, "sk-no-key", model_name
+            None, adapter.configure, base_url, "sk-no-key", model_name, context_length
         )
     except RuntimeError as exc:
         await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
         await websocket.close(code=4400)
         return
 
+    # Prove it took effect (read every value back from the agent), and start
+    # watching the runtime's server log so the UI can show when the agent's
+    # first real request arrives. Neither may block or break the terminal.
+    verification = None
     try:
-        session = PtySession(adapter.build_launch_command(), cols=cols, rows=rows)
+        verification = (
+            await asyncio.get_event_loop().run_in_executor(
+                None,
+                agent_verification.verify_settings,
+                adapter,
+                adapter.expected_settings(base_url, "sk-no-key", model_name, context_length),
+            )
+        ).to_dict()
+        await websocket.send_text(json.dumps({"type": "config_check", "report": verification}))
+    except Exception:  # noqa: BLE001 - diagnostics only
+        pass
+    try:
+        agent_pairing.pairing_monitor.start(agent_id, runtime_id, runtime_manager.get_logs(runtime, 2000), verification)
+    except Exception:  # noqa: BLE001
+        pass
+
+    try:
+        extra_env = adapter.launch_env("sk-no-key")
+        session = PtySession(
+            adapter.build_launch_command(),
+            env={**os.environ, **extra_env} if extra_env else None,
+            cols=cols,
+            rows=rows,
+        )
     except RuntimeError as exc:
         await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
         await websocket.close(code=4400)
@@ -199,6 +231,11 @@ async def agent_terminal_ws(
                 await websocket.send_text(
                     json.dumps({"type": "output", "data": chunk.decode("utf-8", errors="replace")})
                 )
+            elif session.read_error:
+                # Reader died for a real reason (not a normal exit): tell the
+                # UI instead of leaving a connected-but-silent terminal.
+                await websocket.send_text(json.dumps({"type": "error", "message": session.read_error}))
+                return
             elif not session.is_alive():
                 await websocket.send_text(json.dumps({"type": "exit"}))
                 return
