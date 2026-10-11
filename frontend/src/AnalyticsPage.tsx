@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, apiErrorMessage, type MetricsSnapshotItem, type RuntimeSummary } from "./api";
-import { buildSeries, rangeToSince, type TimeRange } from "./analytics-utils";
+import { buildSeries, RANGE_MS, rangeToSince, type TimeRange } from "./analytics-utils";
 import { LineChart } from "./components/LineChart";
+import { StatusBar } from "./components/StatusBar";
+import { bucketActivity } from "./status-bar-utils";
 
 const RANGES: TimeRange[] = ["15m", "1h", "6h", "24h"];
 const REFRESH_MS = 15_000;
@@ -64,6 +66,9 @@ export function AnalyticsPage() {
     [snapshots]
   );
 
+  // "now" is read when the data arrives, so the strip and the charts agree
+  const activity = useMemo(() => bucketActivity(snapshots, RANGE_MS[range], Date.now()), [snapshots, range]);
+
   return (
     <div className="main">
       <div className="section-heading">
@@ -109,6 +114,8 @@ export function AnalyticsPage() {
       ) : loading ? (
         <p className="muted">Loading…</p>
       ) : (
+        <>
+        <StatusBar buckets={activity} label="Runtime activity" />
         <div className="analytics-grid">
           <LineChart title="Tokens / sec" points={series.tps} unit=" t/s" />
           <LineChart title="Latency" points={series.latency} unit=" ms" digits={0} />
@@ -117,6 +124,7 @@ export function AnalyticsPage() {
           <LineChart title="GPU" points={series.gpu} unit="%" fixedMax={100} />
           <LineChart title="VRAM" points={series.vram} unit="%" fixedMax={100} />
         </div>
+        </>
       )}
     </div>
   );

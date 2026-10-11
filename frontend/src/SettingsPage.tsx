@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type AgentBackendInfo, type AgentSummary, type ConfigCheckReport, type RuntimeSummary } from "./api";
-import { BrowseTab } from "./components/BrowseTab";
-import { RuntimeLogPanel } from "./components/RuntimeLogPanel";
 import { configProblems, configSummary } from "./pairing-utils";
+import { CustomAgentForm } from "./components/CustomAgentForm";
 import { configToForm, formToConfigPatch, type ConfigForm, type ConfigValue } from "./runtime-config-utils";
 
 function toStr(v: unknown): string {
@@ -160,7 +159,7 @@ function FieldInput({
  * start/restart, not to an already-running process.
  */
 export function SettingsPage() {
-  const [tab, setTab] = useState<"runtimes" | "agents" | "browse">("runtimes");
+  const [tab, setTab] = useState<"runtimes" | "agents">("runtimes");
 
   const [runtimes, setRuntimes] = useState<RuntimeSummary[]>([]);
   const [selectedRuntimeId, setSelectedRuntimeId] = useState<number | "">("");
@@ -203,14 +202,6 @@ export function SettingsPage() {
     }
     setConnectLog(null);
   }, [selectedAgentId, agents]);
-
-  /** Something was added from the Browse tab (an agent registered, an
-   * install finished, a model added) -- reload what this page shows. */
-  function refreshAfterBrowse() {
-    api.listRuntimes().then(setRuntimes);
-    api.listAgents().then(setAgents);
-    api.listAgentBackends().then(setAgentBackends);
-  }
 
   async function saveRuntime() {
     if (selectedRuntimeId === "") return;
@@ -315,9 +306,6 @@ export function SettingsPage() {
             <button className={tab === "agents" ? "active" : ""} onClick={() => setTab("agents")}>
               Agents
             </button>
-            <button className={tab === "browse" ? "active" : ""} onClick={() => setTab("browse")}>
-              Browse
-            </button>
           </nav>
         </div>
 
@@ -335,9 +323,8 @@ export function SettingsPage() {
             {selectedRuntimeId !== "" && (
               <>
                 <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-                  روی start/restart بعدی اعمال می‌شه، نه روی پردازش الان در حال اجرا.
+                  روی start/restart بعدی اعمال می‌شه، نه روی پردازش الان در حال اجرا. برای دیدن اینکه سرور واقعاً چه تنظیماتی گرفته: Logs ← Server output.
                 </p>
-                <RuntimeLogPanel runtimeId={selectedRuntimeId as number} />
                 {RUNTIME_FIELD_GROUPS.map((group) => (
                   <div className="panel git-diff-summary" key={group.title}>
                     <div className="section-heading">
@@ -398,12 +385,21 @@ export function SettingsPage() {
                       <select value={agentBackendDraft} onChange={(e) => setAgentBackendDraft(e.target.value)}>
                         {agentBackends.map((b) => (
                           <option key={b.backend_id} value={b.backend_id}>
-                            {b.display_name} {b.backend_id !== "generic" && (b.detected ? "✓ detected" : "— not detected")}
+                            {b.display_name}{" "}
+                            {b.backend_id !== "generic" && b.backend_id !== "custom_cli" && (b.detected ? "✓ detected" : "— not detected")}
                           </option>
                         ))}
                       </select>
                     </label>
                   </div>
+
+                  {agentBackendDraft === "custom_cli" && selectedAgentId !== "" && (
+                    <CustomAgentForm
+                      key={selectedAgentId}
+                      agent={agents.find((a) => a.id === selectedAgentId)!}
+                      onSaved={(updated) => setAgents((prev) => prev.map((a) => (a.id === updated.id ? updated : a)))}
+                    />
+                  )}
 
                   {agentBackendDraft !== "generic" && (
                     <>
@@ -498,7 +494,6 @@ export function SettingsPage() {
           </>
         )}
 
-        {tab === "browse" && <BrowseTab onChanged={refreshAfterBrowse} />}
       </section>
     </div>
   );

@@ -13,6 +13,8 @@ import { AgentTerminal } from "./components/AgentTerminal";
 import { AgentToolsPanel } from "./components/AgentToolsPanel";
 import { applyStreamEvent, startStream, toStreamEvent } from "./chat-stream-utils";
 import { ContextInspectorPanel } from "./components/ContextInspectorPanel";
+import { canEdit, canRetry, copyableText, keptForEdit, keptForRetry } from "./chat-actions-utils";
+import { copyToClipboard } from "./clipboard-utils";
 
 /**
  * The chat surface: every LLM gets one, whether or not it has an agent
@@ -50,6 +52,14 @@ export function ChatView({ initialChatId }: { initialChatId?: number | null } = 
   const [inChatResults, setInChatResults] = useState<ChatMessageItem[] | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // per-message actions
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editText, setEditText] = useState("");
+  const [retryId, setRetryId] = useState<number | null>(null);
+  const [retryRuntimeId, setRetryRuntimeId] = useState<number | "">("");
+  const [retryAgentId, setRetryAgentId] = useState<number | "">("");
+  const [copiedId, setCopiedId] = useState<number | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -111,19 +121,32 @@ export function ChatView({ initialChatId }: { initialChatId?: number | null } = 
     if (selectedChatId === id) setSelectedChatId(null);
   }
 
-  async function handleSend() {
-    if (!draft.trim() || selectedChatId == null) return;
+  type TurnOptions = {
+    content: string;
+    /** edit (content given) or retry (content empty): replace from this message */
+    replaceFromId?: number;
+    runtimeId?: number;
+    agentId?: number;
+    clearAgent?: boolean;
+  };
+
+  /** One turn against the server: a normal send, an edit, or a retry. The
+   * reducer in chat-stream-utils decides what every server event does to the
+   * screen; the server stays the source of truth (re-synced at the end). */
+  async function runTurn(t: TurnOptions): Promise<boolean> {
+    if (selectedChatId == null) return false;
     const chatId = selectedChatId;
-    const content = draft;
     setSending(true);
     setError(null);
-    setDraft("");
     const abort = new AbortController();
     abortRef.current = abort;
 
-    // Live state for this turn: the reducer is the only thing that decides what
-    // each server event does to the screen (see chat-stream-utils.ts).
-    let state = startStream(messages);
+    let base = messages;
+    if (t.replaceFromId != null) {
+      base = t.content ? keptForEdit(messages, t.replaceFromId) : keptForRetry(messages, t.replaceFromId);
+      setMessages(base);
+    }
+    let state = startStream(base);
     const apply = (ev: Parameters<typeof applyStreamEvent>[1]) => {
       state = applyStreamEvent(state, ev);
       setMessages(state.messages);
@@ -131,26 +154,33 @@ export function ChatView({ initialChatId }: { initialChatId?: number | null } = 
       if (state.error) setError(state.error);
     };
 
+    let ok = true;
     try {
       await api.streamChatMessage(
         chatId,
-        content,
+        t.content,
         (sse) => {
           const ev = toStreamEvent(sse);
           if (ev) apply(ev);
         },
-        { signal: abort.signal }
+        {
+          signal: abort.signal,
+          ...(t.replaceFromId != null ? { replace_from_message_id: t.replaceFromId } : {}),
+          ...(t.runtimeId != null ? { runtime_id: t.runtimeId } : {}),
+          ...(t.agentId != null ? { agent_id: t.agentId } : {}),
+          ...(t.clearAgent ? { clear_agent: true } : {}),
+        }
       );
     } catch (err) {
-      // Nothing was stored (the turn never started): give the text back.
+      // Nothing was stored (the turn never started).
+      ok = false;
       setError(err instanceof Error ? apiErrorMessage(err, "Could not send the message.") : "Could not send the message.");
-      setDraft(content);
     } finally {
       abortRef.current = null;
       setLiveText("");
       setSending(false);
       // Re-sync with the server: it is the source of truth (a Stop keeps the
-      // partial reply it had already stored, which only the server knows).
+      // partial reply it had already stored, a refused edit changed nothing).
       try {
         const [updated, chatList] = await Promise.all([api.getChatMessages(chatId), api.listChats()]);
         setMessages(updated);
@@ -159,6 +189,62 @@ export function ChatView({ initialChatId }: { initialChatId?: number | null } = 
         /* keep what the stream showed */
       }
     }
+    return ok;
+  }
+
+  async function handleSend() {
+    if (!draft.trim() || selectedChatId == null) return;
+    const content = draft;
+    setDraft("");
+    if (!(await runTurn({ content }))) setDraft(content); // give the text back
+  }
+
+  async function handleCopy(m: ChatMessageItem) {
+    if (await copyToClipboard(copyableText(m))) {
+      setCopiedId(m.id);
+      window.setTimeout(() => setCopiedId((cur) => (cur === m.id ? null : cur)), 1500);
+    } else {
+      setError("Could not copy — select the text and copy it by hand.");
+    }
+  }
+
+  function startEdit(m: ChatMessageItem) {
+    setRetryId(null);
+    setEditingId(m.id);
+    setEditText(m.content);
+  }
+
+  async function saveEdit() {
+    if (editingId == null || !editText.trim()) return;
+    const id = editingId;
+    const text = editText;
+    setEditingId(null);
+    if (!(await runTurn({ content: text, replaceFromId: id }))) {
+      setEditingId(id); // refused: keep what was typed
+      setEditText(text);
+    }
+  }
+
+  function openRetry(m: ChatMessageItem) {
+    setEditingId(null);
+    setRetryId((cur) => (cur === m.id ? null : m.id));
+    setRetryRuntimeId(selectedChat?.runtime_id ?? "");
+    setRetryAgentId(selectedChat?.agent_id ?? "");
+  }
+
+  async function confirmRetry() {
+    if (retryId == null || selectedChat == null) return;
+    const id = retryId;
+    setRetryId(null);
+    const runtimeChanged = retryRuntimeId !== "" && retryRuntimeId !== selectedChat.runtime_id;
+    const agentChanged = retryAgentId !== (selectedChat.agent_id ?? "");
+    await runTurn({
+      content: "",
+      replaceFromId: id,
+      runtimeId: runtimeChanged ? Number(retryRuntimeId) : undefined,
+      agentId: agentChanged && retryAgentId !== "" ? Number(retryAgentId) : undefined,
+      clearAgent: agentChanged && retryAgentId === "",
+    });
   }
 
   function handleStop() {
@@ -343,31 +429,117 @@ export function ChatView({ initialChatId }: { initialChatId?: number | null } = 
                 <>
                   <div className="chat-messages">
                     {messages.map((m) => (
-                      <div key={m.id} className={`chat-bubble ${m.role}`}>
-                        {m.role === "tool" ? (
-                          <>
-                            <div className={`tool-result-header tool-result-${m.tool_meta.status ?? "ok"}`}>
-                              <span className="mono">{m.tool_meta.name ?? "tool"}</span>
-                              <span className="mcp-tag">{m.tool_meta.status ?? "ok"}</span>
-                            </div>
-                            <div className="mono tool-result-content">{m.content}</div>
-                          </>
-                        ) : (
-                          <>
-                            {m.content}
-                            {m.role === "assistant" && (m.tool_meta.calls?.length ?? 0) > 0 && (
-                              <div className="tool-calls-list">
-                                {m.tool_meta.calls!.map((c) => (
-                                  <span key={c.id} className="mcp-tag mono">
-                                    called {c.name}
-                                  </span>
-                                ))}
+                      <div key={m.id} className={`chat-message ${m.role}`}>
+                        <div className={`chat-bubble ${m.role}`}>
+                          {m.role === "tool" ? (
+                            <>
+                              <div className={`tool-result-header tool-result-${m.tool_meta.status ?? "ok"}`}>
+                                <span className="mono">{m.tool_meta.name ?? "tool"}</span>
+                                <span className="mcp-tag">{m.tool_meta.status ?? "ok"}</span>
                               </div>
+                              <div className="mono tool-result-content">{m.content}</div>
+                            </>
+                          ) : editingId === m.id ? (
+                            <div className="message-edit">
+                              <textarea
+                                autoFocus
+                                aria-label="Edit message"
+                                value={editText}
+                                onChange={(e) => setEditText(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Escape") setEditingId(null);
+                                  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) void saveEdit();
+                                }}
+                              />
+                              <div className="message-edit-actions">
+                                <button onClick={() => setEditingId(null)}>Cancel</button>
+                                <button className="primary" disabled={!editText.trim()} onClick={() => void saveEdit()}>
+                                  Save and resend
+                                </button>
+                              </div>
+                              <div className="muted message-edit-note">
+                                The messages after this one are replaced by the new answer.
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              {m.content}
+                              {m.role === "assistant" && (m.tool_meta.calls?.length ?? 0) > 0 && (
+                                <div className="tool-calls-list">
+                                  {m.tool_meta.calls!.map((c) => (
+                                    <span key={c.id} className="mcp-tag mono">
+                                      called {c.name}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </>
+                          )}
+                          {m.role === "assistant" && m.latency_ms != null && (
+                            <div className="chat-bubble-meta">{Math.round(m.latency_ms)} ms</div>
+                          )}
+                        </div>
+
+                        {editingId !== m.id && (
+                          <div className="message-actions">
+                            <button aria-label="Copy message" onClick={() => void handleCopy(m)}>
+                              {copiedId === m.id ? "Copied" : "Copy"}
+                            </button>
+                            {canEdit(m) && (
+                              <button aria-label="Edit message" disabled={sending} onClick={() => startEdit(m)}>
+                                Edit
+                              </button>
                             )}
-                          </>
+                            {canRetry(m) && (
+                              <button
+                                aria-label="Retry reply"
+                                aria-expanded={retryId === m.id}
+                                disabled={sending}
+                                onClick={() => openRetry(m)}
+                              >
+                                Retry
+                              </button>
+                            )}
+                          </div>
                         )}
-                        {m.role === "assistant" && m.latency_ms != null && (
-                          <div className="chat-bubble-meta">{Math.round(m.latency_ms)} ms</div>
+
+                        {retryId === m.id && (
+                          <div className="retry-menu" role="group" aria-label="Retry with">
+                            <label>
+                              LLM
+                              <select
+                                aria-label="Retry with LLM"
+                                value={retryRuntimeId}
+                                onChange={(e) => setRetryRuntimeId(Number(e.target.value))}
+                              >
+                                {runtimes.map((r) => (
+                                  <option key={r.id} value={r.id}>
+                                    {r.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label>
+                              Agent
+                              <select
+                                aria-label="Retry with agent"
+                                value={retryAgentId}
+                                onChange={(e) => setRetryAgentId(e.target.value ? Number(e.target.value) : "")}
+                              >
+                                <option value="">no agent</option>
+                                {agents.map((a) => (
+                                  <option key={a.id} value={a.id}>
+                                    {a.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <button className="primary" onClick={() => void confirmRetry()}>
+                              Retry
+                            </button>
+                            <button onClick={() => setRetryId(null)}>Cancel</button>
+                            <div className="muted message-edit-note">The chat keeps using the LLM and agent you choose here.</div>
+                          </div>
                         )}
                       </div>
                     ))}
@@ -381,25 +553,33 @@ export function ChatView({ initialChatId }: { initialChatId?: number | null } = 
 
                   {error && <div className="error-text">{error}</div>}
 
-                  <div className="chat-input-bar">
+                  <div className="chat-input-bar composer">
                     <textarea
                       value={draft}
+                      rows={Math.min(8, Math.max(1, draft.split("\n").length))}
                       onChange={(e) => setDraft(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) {
                           e.preventDefault();
-                          handleSend();
+                          void handleSend();
                         }
                       }}
                       placeholder="Message this LLM…"
+                      aria-label="Message"
                     />
                     {sending ? (
-                      <button onClick={handleStop}>Stop</button>
+                      <button className="composer-send" onClick={handleStop}>
+                        Stop
+                      </button>
                     ) : (
-                      <button className="primary" disabled={!draft.trim()} onClick={handleSend}>
+                      <button className="primary composer-send" disabled={!draft.trim()} onClick={() => void handleSend()}>
                         Send
                       </button>
                     )}
+                  </div>
+                  <div className="composer-hint muted">
+                    {runtimeName(selectedChat.runtime_id)}
+                    {selectedAgent ? ` · ${selectedAgent.name}` : ""} — Enter sends, Shift+Enter adds a line
                   </div>
                 </>
               )}

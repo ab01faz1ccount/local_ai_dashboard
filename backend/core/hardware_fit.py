@@ -38,6 +38,20 @@ _RAM_RESERVE_MB = 2048.0
 _RAM_RESERVE_FRACTION = 0.20  # on small machines 2 GB would be most of the RAM
 
 
+KV_CACHE_MB_PER_1K_CONTEXT = 80.0  # generic fp16 figure; real value depends on the architecture
+DEFAULT_CONTEXT = 4096
+
+
+def estimate_memory_mb(file_size_bytes: float, context_length: Optional[int] = None) -> dict:
+    """The one memory heuristic used everywhere (local catalog AND online
+    search results): weights ~= file size, plus a generic KV-cache term that
+    grows with context. Coarse by design -- see the module docstring."""
+    base = file_size_bytes / (1024 * 1024)
+    ctx = context_length or DEFAULT_CONTEXT
+    kv = (ctx / 1000.0) * KV_CACHE_MB_PER_1K_CONTEXT
+    return {"base_mb": base, "kv_cache_mb": kv, "total_mb": base + kv}
+
+
 def _label_for_ratio(ratio: float) -> str:
     for upper, label in _BANDS:
         if ratio <= upper:
@@ -46,6 +60,20 @@ def _label_for_ratio(ratio: float) -> str:
 
 
 _RANK = {GOOD: 0, WARNING: 1, LIKELY_TO_EXCEED: 2, NOT_RECOMMENDED: 3}
+
+
+def gpu_label(estimated_mb: float, hardware: Optional[dict]) -> Optional[str]:
+    """The verdict for the GPU alone (None when there is no usable GPU or it
+    can't be read). assess_fit() reports the BEST of GPU and CPU, which hides
+    "fits in VRAM, but only just" behind a comfortable CPU verdict -- a
+    recommendation that wants speed needs the GPU answer on its own."""
+    try:
+        gpu = hardware["gpu"]
+        if not gpu.available or not gpu.vram_total_mb or gpu.vram_total_mb <= 0:
+            return None
+        return _label_for_ratio(estimated_mb / gpu.vram_total_mb)
+    except (TypeError, KeyError, AttributeError):
+        return None
 
 
 def ram_capacity_mb(total_mb: float) -> float:

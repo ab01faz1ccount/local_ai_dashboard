@@ -31,6 +31,7 @@ from ..core.config_merge import merge_config_patch
 from ..core.agents import pairing as agent_pairing
 from ..core.agents import verification as agent_verification
 from ..core import chat as chat_engine
+from ..core import chat_edit
 from ..core import chat_tasks
 from ..core import comparison
 from ..core import connectivity
@@ -192,9 +193,17 @@ class GitCommitRequest(BaseModel):
 
 
 class SendMessageRequest(BaseModel):
-    content: str
+    # Empty only for a retry (then `replace_from_message_id` is required).
+    content: str = ""
     temperature: float = 0.8
     max_tokens: Optional[int] = None
+    # Edit (with content) or retry (without): this message and everything after
+    # it is removed first -- see core/chat_edit.py for the exact rule.
+    replace_from_message_id: Optional[int] = None
+    # Answer with a different LLM and/or agent. The chat adopts the new target.
+    runtime_id: Optional[int] = None
+    agent_id: Optional[int] = None
+    clear_agent: bool = False
 
 
 # ---------------------------------------------------------------------
@@ -626,9 +635,32 @@ def get_agent(agent_id: int, db: Session = Depends(get_db_session)):
     return _agent_to_dict(agent)
 
 
+def _check_backend_choice(backend: str, config_json: Optional[dict]) -> Optional[dict]:
+    """Validates an agent's backend (and, for the data-driven "custom_cli"
+    backend, its saved spec) BEFORE it is stored, so a bad value can never
+    leave the terminal unable to find an adapter later. Returns the config
+    dict to store (spec normalized), or None when config_json wasn't given."""
+    if not agent_backends.is_known_backend(backend):
+        raise HTTPException(400, f"backend '{backend}' شناخته‌شده نیست.")
+    if backend != agent_backends.CUSTOM_BACKEND_ID:
+        return config_json
+    spec = (config_json or {}).get("cli_spec")
+    if spec is None:
+        return config_json
+    try:
+        normalized = agent_backends.validate_spec(spec)
+    except agent_backends.SpecError as exc:
+        raise HTTPException(400, f"cli_spec: {exc}")
+    return {**config_json, "cli_spec": normalized}
+
+
 @router.post("/agents")
 def create_agent(body: AgentCreate, db: Session = Depends(get_db_session)):
-    agent = Agent(**body.model_dump())
+    data = body.model_dump()
+    data["config_json"] = _check_backend_choice(body.agent_backend, body.config_json) or {}
+    if body.agent_backend == agent_backends.CUSTOM_BACKEND_ID and not data["config_json"].get("cli_spec"):
+        raise HTTPException(400, "custom_cli needs config_json.cli_spec (how to find and configure the CLI).")
+    agent = Agent(**data)
     db.add(agent)
     db.commit()
     db.refresh(agent)
@@ -658,12 +690,14 @@ def update_agent_config(agent_id: int, body: AgentConfigUpdate, db: Session = De
         # -- same set list_agent_backends() advertises -- so a bad value
         # here can't silently leave /ws/agent-terminal unable to find an
         # adapter later.
-        known = {a.backend_id for a in agent_backends.list_adapters()}
-        if body.agent_backend != "generic" and body.agent_backend not in known:
+        if not agent_backends.is_known_backend(body.agent_backend):
             raise HTTPException(400, f"backend '{body.agent_backend}' شناخته‌شده نیست.")
         agent.agent_backend = body.agent_backend
     if body.config_json is not None:
         agent.config_json = merge_config_patch(agent.config_json, body.config_json)
+    # Validate the RESULT (after merge): covers a backend switch and a spec edit alike.
+    if agent.agent_backend == agent_backends.CUSTOM_BACKEND_ID and "cli_spec" in (agent.config_json or {}):
+        agent.config_json = _check_backend_choice(agent.agent_backend, agent.config_json)
     db.commit()
     db.refresh(agent)
     return _agent_to_dict(agent)
@@ -705,6 +739,16 @@ def list_agent_backends():
             "detected_version": None,
         }
     ]
+    backends.append(
+        {
+            "backend_id": agent_backends.CUSTOM_BACKEND_ID,
+            "display_name": "Custom CLI (describe it once — any agent)",
+            "brand_color": "#8a8f98",
+            "detected": True,
+            "detected_path": None,
+            "detected_version": None,
+        }
+    )
     for adapter in agent_backends.list_adapters():
         info = adapter.detect()
         backends.append(
@@ -735,9 +779,12 @@ def configure_agent(agent_id: int, body: AgentConfigureRequest, db: Session = De
     if agent.agent_backend == "generic":
         raise HTTPException(400, "این agent یه backend واقعی نداره — اول یکی رو توی تنظیماتش انتخاب کن.")
 
-    adapter = agent_backends.get_adapter(agent.agent_backend)
+    try:
+        adapter = agent_backends.resolve_adapter(agent.agent_backend, agent.config_json)
+    except agent_backends.SpecError as exc:
+        raise HTTPException(400, f"cli_spec: {exc}")
     if adapter is None:
-        raise HTTPException(400, f"backend '{agent.agent_backend}' شناخته‌شده نیست.")
+        raise HTTPException(400, f"backend '{agent.agent_backend}' شناخته‌شده نیست یا spec ندارد.")
 
     runtime = db.get(Runtime, body.runtime_id)
     if runtime is None:
@@ -1171,30 +1218,61 @@ def get_chat_context(chat_id: int, db: Session = Depends(get_db_session)):
     return context_inspector.inspect_chat_context(db, chat, endpoint)
 
 
-def _prepare_chat_turn(db: Session, chat_id: int, content: str):
-    """Shared by the blocking and streaming send routes: 404 for an unknown
-    chat, 409 for a runtime that isn't online, then store the user's message
-    FIRST -- if anything below fails partway, the user's side of the
-    conversation (and anything the agent loop already wrote) is still saved
-    rather than lost. Returns (chat, endpoint, user_message)."""
+def _prepare_chat_turn(db: Session, chat_id: int, body: "SendMessageRequest"):
+    """Shared by the blocking and streaming send routes. Every check happens
+    BEFORE anything is changed: 404 for an unknown chat/runtime/agent/message,
+    400 for a request that makes no sense, 409 for a runtime that isn't online.
+    Only then: switch the chat's LLM/agent if asked, drop the tail for an
+    edit/retry, and store the user's message FIRST -- if anything below fails
+    partway, the user's side of the conversation is still saved rather than
+    lost. Returns (chat, endpoint, user_message_or_None); None means a retry
+    (the question is already stored)."""
     from ..storage.db import Chat as _Chat  # local import to avoid widening the module-level import list
 
     chat = db.get(_Chat, chat_id)
     if chat is None:
         raise HTTPException(404, "chat not found")
 
-    runtime = _get_runtime_or_404(db, chat.runtime_id)
+    content = body.content if body.content and body.content.strip() else ""
+    if not content and body.replace_from_message_id is None:
+        raise HTTPException(400, "content is required")
+
+    target_runtime_id = body.runtime_id if body.runtime_id is not None else chat.runtime_id
+    runtime = _get_runtime_or_404(db, target_runtime_id)
+    if body.agent_id is not None and db.get(Agent, body.agent_id) is None:
+        raise HTTPException(404, "agent not found")
     status = runtime_manager.get_status(db, runtime)
     if status.state != RuntimeState.ONLINE or not status.endpoint:
         raise HTTPException(409, f"runtime is not online (state: {status.state.value})")
 
-    user_message = storage_db.add_chat_message(db, chat_id, role="user", content=content)
+    drop_ids: list[int] = []
+    if body.replace_from_message_id is not None:
+        try:
+            drop_ids = chat_edit.plan_replace(
+                [(m.id, m.role) for m in storage_db.get_chat_messages(db, chat_id)],
+                body.replace_from_message_id,
+                has_new_content=bool(content),
+            )
+        except chat_edit.ChatEditError as exc:
+            raise HTTPException(exc.status, exc.detail)
+
+    # Past this point the request is valid. A reply still being generated for
+    # this chat would write into the history we are about to cut: stop it first.
+    if drop_ids:
+        chat_tasks.cancel_chat(chat_id)
+        storage_db.delete_chat_messages(db, chat_id, drop_ids)
+    if body.runtime_id is not None or body.agent_id is not None or body.clear_agent:
+        storage_db.set_chat_target(
+            db, chat_id, runtime_id=body.runtime_id, agent_id=body.agent_id, clear_agent=body.clear_agent
+        )
+
+    user_message = storage_db.add_chat_message(db, chat_id, role="user", content=content) if content else None
     return chat, status.endpoint, user_message
 
 
 @router.post("/chats/{chat_id}/messages")
 def send_chat_message(chat_id: int, body: SendMessageRequest, db: Session = Depends(get_db_session)):
-    chat, endpoint, _ = _prepare_chat_turn(db, chat_id, body.content)
+    chat, endpoint, _ = _prepare_chat_turn(db, chat_id, body)
     try:
         written = agent_loop.run_agent_turn(
             db, chat, endpoint, temperature=body.temperature, max_tokens=body.max_tokens
@@ -1229,9 +1307,9 @@ def stream_chat_message(chat_id: int, body: SendMessageRequest, db: Session = De
     Stop) cancels it: text already streamed is kept, and the model stops
     generating. A turn blocked waiting on a permission decision notices the
     cancel only when that wait ends (its own timeout bounds it)."""
-    chat, endpoint, user_message = _prepare_chat_turn(db, chat_id, body.content)
+    chat, endpoint, user_message = _prepare_chat_turn(db, chat_id, body)
     chat_id_value = chat.id
-    user_event = _sse("user", _message_to_dict(user_message))
+    user_event = _sse("user", _message_to_dict(user_message)) if user_message is not None else None
     temperature, max_tokens = body.temperature, body.max_tokens
 
     async def generate():
@@ -1273,7 +1351,8 @@ def stream_chat_message(chat_id: int, body: SendMessageRequest, db: Session = De
 
         threading.Thread(target=worker, name=f"chat-stream-{chat_id_value}", daemon=True).start()
         try:
-            yield user_event
+            if user_event is not None:
+                yield user_event
             while True:
                 item = await events_q.get()
                 if item is None:

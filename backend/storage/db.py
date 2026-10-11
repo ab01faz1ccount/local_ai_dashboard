@@ -1211,6 +1211,45 @@ def add_chat_message(
     return message
 
 
+def delete_chat_messages(db: Session, chat_id: int, message_ids: list[int]) -> int:
+    """Remove exactly these messages of this chat (an edit or a retry cuts the
+    tail of the conversation). Rows are deleted one by one through the ORM so
+    the full-text index triggers fire like for any other delete."""
+    if not message_ids:
+        return 0
+    rows = db.query(ChatMessage).filter(ChatMessage.chat_id == chat_id, ChatMessage.id.in_(message_ids)).all()
+    for row in rows:
+        db.delete(row)
+    chat = db.get(Chat, chat_id)
+    if chat is not None:
+        chat.updated_at = _utcnow_iso()
+    db.commit()
+    return len(rows)
+
+
+def set_chat_target(
+    db: Session,
+    chat_id: int,
+    runtime_id: Optional[int] = None,
+    agent_id: Optional[int] = None,
+    clear_agent: bool = False,
+) -> Optional[Chat]:
+    """Point a chat at another LLM and/or agent (used by "retry with ...")."""
+    chat = db.get(Chat, chat_id)
+    if chat is None:
+        return None
+    if runtime_id is not None:
+        chat.runtime_id = runtime_id
+    if clear_agent:
+        chat.agent_id = None
+    elif agent_id is not None:
+        chat.agent_id = agent_id
+    chat.updated_at = _utcnow_iso()
+    db.commit()
+    db.refresh(chat)
+    return chat
+
+
 def get_chat_messages(db: Session, chat_id: int) -> list[ChatMessage]:
     return db.query(ChatMessage).filter(ChatMessage.chat_id == chat_id).order_by(ChatMessage.id).all()
 

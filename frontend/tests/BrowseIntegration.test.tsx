@@ -5,6 +5,7 @@ import { BrowseTab } from "../src/components/BrowseTab";
 import { RuntimeCard } from "../src/components/RuntimeCard";
 import { OnboardingWizard } from "../src/OnboardingWizard";
 import { SettingsPage } from "../src/SettingsPage";
+import { SetupPage } from "../src/SetupPage";
 import { listing } from "./helpers";
 
 vi.mock("../src/api", async (orig) => {
@@ -15,6 +16,7 @@ vi.mock("../src/api", async (orig) => {
     "listAgentBackends","getOnboardingState","listRuntimes","listAgents","listModels","patchOnboardingState","verifyExecutablePath",
     "detectLlamaCpp","getInstallGuidance","scanModels","createRuntime","startRuntime","createAgent","configureAgent","attachAgent",
     "updateRuntimeConfig","updateAgentConfig","deleteRuntime","deleteAgent",
+    "getAutoFree","setAutoFree","customAgentPresets","checkCustomAgent","launchPlan","quickConnect",
   ];
   return { ...actual, api: Object.fromEntries(names.map((n) => [n, vi.fn()])) };
 });
@@ -31,6 +33,8 @@ beforeEach(() => {
   m.getConnectivity.mockResolvedValue({ online: true });
   m.getModelsDir.mockResolvedValue({ path: "/data/models" });
   m.listDownloads.mockResolvedValue([]);
+  m.getAutoFree.mockResolvedValue({ mode: "off", grace_minutes: 2, idle_minutes: 10 });
+  m.customAgentPresets.mockResolvedValue([]);
   m.fsList.mockImplementation(async ({ path }: { path?: string | null }) =>
     listing(path ?? "/home/u", [{ name: "Tiny.gguf", size: 5000 }, { name: "hermes" }, { name: "llama-server" }])
   );
@@ -136,24 +140,69 @@ describe("RuntimeCard edit -> Browse for the executable", () => {
 });
 
 describe("Settings page", () => {
-  it("has a Browse tab that mounts the tab, and refreshes agents/backends after something is added", async () => {
+  it("no longer has a Browse tab (finding models/agents lives in Setup)", async () => {
     m.listRuntimes.mockResolvedValue([]);
     m.listAgents.mockResolvedValue([]);
     m.listAgentBackends.mockResolvedValue([]);
+    render(<SettingsPage />);
+    await waitFor(() => expect(m.listAgents).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: "Browse" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Agents" })).toBeInTheDocument();
+  });
+});
+
+describe("Setup page", () => {
+  beforeEach(() => {
+    m.getOnboardingState.mockResolvedValue({ llama_cpp_detected: true, llama_cpp_path: "/usr/bin/llama-server", first_model_added: false, first_runtime_configured: false, first_agent_created: false, wizard_completed: false });
+    m.listRuntimes.mockResolvedValue([]);
+    m.listModels.mockResolvedValue([]);
+  });
+
+  it("shows the options first, and the LLM/Agent filter narrows them", async () => {
+    render(<SetupPage onDone={() => {}} />);
+    expect(screen.getByRole("button", { name: /Run an LLM/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Add a model/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Add an agent/ })).toBeInTheDocument();
+    expect(screen.queryByText("Find llama.cpp", { selector: "h2" })).toBeNull(); // no step content yet
+
+    await userEvent.click(screen.getByRole("button", { name: "Agent" }));
+    expect(screen.getByRole("button", { name: /Add an agent/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Run an LLM/ })).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "LLM" }));
+    expect(screen.queryByRole("button", { name: /Add an agent/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /Add a model/ })).toBeInTheDocument();
+  });
+
+  it("Add an agent opens the agent finder (no Models/Agents switch) and can go back", async () => {
     m.registerLocalAgent.mockResolvedValue({
       agent: { id: 3, name: "Hermes Agent", description: null, agent_type: "generic", agent_backend: "hermes", default_runtime_id: null, config_json: {}, status: "INACTIVE" },
       created: true, path: "/opt/hermes", detected_version: null,
     });
-    render(<SettingsPage />);
-    await waitFor(() => expect(m.listAgents).toHaveBeenCalledTimes(1));
-    await userEvent.click(screen.getByRole("button", { name: "Browse" }));
-    expect(screen.getByRole("button", { name: "Choose a .gguf file…" })).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: "Agents (CLI)" }));
+    render(<SetupPage onDone={() => {}} />);
+    await userEvent.click(screen.getByRole("button", { name: /Add an agent/ }));
+    expect(screen.queryByRole("button", { name: "Models (LLM)" })).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: /Choose the agent's executable/ }));
     await userEvent.dblClick(await screen.findByText("hermes"));
-    await waitFor(() => expect(m.listAgents).toHaveBeenCalledTimes(2));
-    expect(m.listAgentBackends).toHaveBeenCalledTimes(2);
+    expect(m.registerLocalAgent).toHaveBeenCalledWith("/home/u/hermes");
+
+    await userEvent.click(screen.getByRole("button", { name: "← All setup options" }));
+    expect(screen.getByRole("button", { name: /Run an LLM/ })).toBeInTheDocument();
+  });
+
+  it("Add a model opens the model finder", async () => {
+    render(<SetupPage onDone={() => {}} />);
+    await userEvent.click(screen.getByRole("button", { name: /Add a model/ }));
+    expect(screen.getByRole("button", { name: "Choose a .gguf file…" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Agents (CLI)" })).toBeNull();
+  });
+
+  it("Run an LLM opens the wizard; its back link returns to the options", async () => {
+    render(<SetupPage onDone={() => {}} />);
+    await userEvent.click(screen.getByRole("button", { name: /Run an LLM/ }));
+    expect(await screen.findByText("Find or install llama.cpp")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "← All setup options" }));
+    expect(screen.getByRole("button", { name: /Add an agent/ })).toBeInTheDocument();
   });
 });
 
@@ -215,5 +264,27 @@ describe("Setup wizard", () => {
     expect(m.registerLocalModel).toHaveBeenCalledWith("/home/u/Tiny.gguf");
     await waitFor(() => expect(screen.getByRole("combobox")).toHaveValue("5"));
     expect(screen.getAllByRole("button", { name: "Continue" }).at(-1)).toBeEnabled();
+  });
+
+  it("finishing the LLM flow ends on a done screen and never asks about agents", async () => {
+    m.listModels.mockResolvedValue([model(5, "Tiny")]);
+    m.createRuntime.mockResolvedValue({ id: 7, status: "STOPPED" });
+    m.startRuntime.mockResolvedValue({});
+    m.listRuntimes.mockResolvedValueOnce([]).mockResolvedValue([{ id: 7, status: "ONLINE", last_error: null }]);
+    m.patchOnboardingState.mockResolvedValue({});
+    const done = vi.fn();
+    render(<OnboardingWizard onComplete={done} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Continue" }));
+    await userEvent.selectOptions(await screen.findByRole("combobox"), "5");
+    await userEvent.click(screen.getAllByRole("button", { name: "Continue" }).at(-1)!);
+    await userEvent.click(await screen.findByRole("button", { name: "Create & start" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Finish" }));
+    expect(await screen.findByTestId("llm-done")).toBeInTheDocument();
+    expect(m.patchOnboardingState).toHaveBeenCalledWith({ wizard_completed: true });
+    expect(screen.queryByText(/Attach an agent/)).toBeNull();
+    expect(m.createAgent).not.toHaveBeenCalled();
+    expect(m.attachAgent).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Go to dashboard" }));
+    expect(done).toHaveBeenCalled();
   });
 });

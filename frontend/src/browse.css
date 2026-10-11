@@ -6,23 +6,16 @@
  * theme variables, point these at them and everything follows.
  */
 :root {
-  --browse-surface: #1d1f26;
-  --browse-surface-2: #262932;
-  --browse-border: rgba(127, 127, 127, 0.35);
-  --browse-text: #e6e8ee;
-  --browse-muted: #9aa0ae;
-  --browse-accent: #4c8dff;
-  --browse-ok: #3fb96b;
-  --browse-warn: #e0a030;
-  --browse-danger: #e5534b;
-}
-@media (prefers-color-scheme: light) {
-  :root {
-    --browse-surface: #ffffff;
-    --browse-surface-2: #f1f2f6;
-    --browse-text: #1b1d24;
-    --browse-muted: #626878;
-  }
+  /* follow the app theme (theme.css) -- this file no longer has its own colours */
+  --browse-surface: var(--surface);
+  --browse-surface-2: var(--surface-raised);
+  --browse-border: var(--border-strong);
+  --browse-text: var(--text-primary);
+  --browse-muted: var(--text-muted);
+  --browse-accent: var(--accent);
+  --browse-ok: var(--status-online);
+  --browse-warn: var(--status-starting);
+  --browse-danger: var(--status-error);
 }
 
 /* ---------- file picker dialog ---------- */

@@ -2,8 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   api,
   apiErrorMessage,
-  type AgentBackendInfo,
-  type AgentSummary,
   type InstallGuidance,
   type ModelSummary,
   type OnboardingState,
@@ -13,38 +11,33 @@ import { FileBrowserDialog } from "./components/FileBrowserDialog";
 import { OnlineModelSearch } from "./components/OnlineModelSearch";
 import { deviceWarning } from "./inspect-utils";
 
-const STEP_COUNT = 4;
+const STEP_COUNT = 3; // llama.cpp -> model -> runtime; the screen after it is just "done"
 const START_POLL_TIMEOUT_MS = 20000;
 const START_POLL_INTERVAL_MS = 800;
 
 /**
- * Setup: find/verify llama.cpp -> pick a model -> create AND ACTUALLY
- * START a runtime -> create/attach an agent.
+ * The "Run an LLM" flow of Setup: find/verify llama.cpp -> pick a model ->
+ * create AND ACTUALLY START a runtime. It ends there. Agents are a separate
+ * option on the Setup page; pairing one with this LLM happens where it is
+ * used (Chats), so this flow never asks about agents.
  *
- * Used to be a first-run gate the whole app was stuck behind; it's now
- * just the "Setup" nav item, reachable any time and safe to leave
- * half-finished (that's what `onCancel` is for -- nothing here is lost,
- * every step writes to the backend as it happens, not at the end).
- *
- * Every "Continue" here is gated on a real backend result, not just a
- * non-empty field: the LLM step doesn't let you move on until the
- * runtime is actually observed ONLINE, and the agent step actually opens
- * the llm_agent_sessions link rather than just creating a database row.
- * If the user already has runtimes/agents configured (from a previous
- * partial run, or set up outside the wizard), the wizard offers to use
- * them instead of forcing a from-scratch setup.
+ * Safe to leave half-finished (that's what `onCancel` is for -- every step
+ * writes to the backend as it happens, not at the end). Every "Continue"
+ * is gated on a real backend result: the runtime step doesn't let you move
+ * on until the runtime is actually observed ONLINE.
  */
 export function OnboardingWizard({
   onComplete,
   onCancel,
+  cancelLabel = "← Back to dashboard",
 }: {
   onComplete: () => void;
   onCancel?: () => void;
+  cancelLabel?: string;
 }) {
   const [step, setStep] = useState(0);
   const [state, setState] = useState<OnboardingState | null>(null);
   const [existingRuntimes, setExistingRuntimes] = useState<RuntimeSummary[]>([]);
-  const [existingAgents, setExistingAgents] = useState<AgentSummary[]>([]);
   const [existingModels, setExistingModels] = useState<ModelSummary[]>([]);
 
   // -- step 0: llama.cpp --
@@ -68,11 +61,6 @@ export function OnboardingWizard({
   const [runtimeStatus, setRuntimeStatus] = useState<string | null>(null);
   const [runtimeConfirmedOnline, setRuntimeConfirmedOnline] = useState(false);
 
-  // -- step 3: agent --
-  const [agentName, setAgentName] = useState("My first agent");
-  const [agentBackends, setAgentBackends] = useState<AgentBackendInfo[]>([]);
-  const [agentBackend, setAgentBackend] = useState("generic");
-  const [useExistingAgentId, setUseExistingAgentId] = useState<number | "new">("new");
   const [finishing, setFinishing] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
@@ -80,18 +68,14 @@ export function OnboardingWizard({
 
   useEffect(() => {
     (async () => {
-      const [s, runtimes, agents, models, backends] = await Promise.all([
+      const [s, runtimes, models] = await Promise.all([
         api.getOnboardingState(),
         api.listRuntimes(),
-        api.listAgents(),
         api.listModels(),
-        api.listAgentBackends(),
       ]);
       setState(s);
       setExistingRuntimes(runtimes);
-      setExistingAgents(agents);
       setExistingModels(models);
-      setAgentBackends(backends);
       if (s.llama_cpp_path) {
         setExecutablePath(s.llama_cpp_path);
         setPathVerified(true);
@@ -253,23 +237,14 @@ export function OnboardingWizard({
     });
   }
 
-  // -- step 3 --
+  // -- finish --
 
   async function handleFinish() {
-    if (runtimeId == null) return;
     setError(null);
     setFinishing(true);
     try {
-      let agentId: number;
-      if (useExistingAgentId === "new") {
-        const agent = await api.createAgent({ name: agentName, agent_backend: agentBackend });
-        agentId = agent.id;
-      } else {
-        agentId = useExistingAgentId;
-      }
-      await api.attachAgent(runtimeId, agentId);
       await api.patchOnboardingState({ wizard_completed: true });
-      onComplete();
+      setStep(3);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not finish setup.");
     } finally {
@@ -279,13 +254,13 @@ export function OnboardingWizard({
 
   if (!state) return null;
 
-  const hasExistingSetup = existingRuntimes.length > 0 || existingAgents.length > 0;
+  const hasExistingSetup = existingRuntimes.length > 0;
 
   return (
     <div className="wizard-shell">
       {onCancel && (
         <button className="wizard-back-link" onClick={onCancel}>
-          ← Back to dashboard
+          {cancelLabel}
         </button>
       )}
 
@@ -293,7 +268,7 @@ export function OnboardingWizard({
         <div className="panel wizard-panel">
           <h2>Existing setup found</h2>
           <p>
-            {existingRuntimes.length} runtime(s) and {existingAgents.length} agent(s) are already configured.
+            {existingRuntimes.length} runtime(s) are already configured.
           </p>
           <div className="wizard-actions">
             <button onClick={skipToDashboard}>Skip to dashboard</button>
@@ -435,64 +410,24 @@ export function OnboardingWizard({
 
           <div className="wizard-actions">
             <button onClick={() => setStep(1)}>Back</button>
-            <button className="primary" disabled={!runtimeConfirmedOnline} onClick={() => setStep(3)}>
-              Continue
+            <button className="primary" disabled={!runtimeConfirmedOnline || finishing} onClick={() => void handleFinish()}>
+              {finishing ? "Finishing…" : "Finish"}
             </button>
           </div>
         </div>
       )}
 
       {step === 3 && (
-        <div className="panel wizard-panel">
-          <h2>Attach an agent</h2>
-
-          {existingAgents.length > 0 && (
-            <div>
-              <div className="field-label">Use an existing agent</div>
-              <select
-                value={useExistingAgentId}
-                onChange={(e) =>
-                  setUseExistingAgentId(e.target.value === "new" ? "new" : Number(e.target.value))
-                }
-              >
-                <option value="new">— create a new agent —</option>
-                {existingAgents.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {useExistingAgentId === "new" && (
-            <div>
-              <div className="field-label">Name</div>
-              <input style={{ width: "100%" }} value={agentName} onChange={(e) => setAgentName(e.target.value)} />
-
-              <div className="field-label" style={{ marginTop: 8 }}>
-                Backend
-              </div>
-              <select value={agentBackend} onChange={(e) => setAgentBackend(e.target.value)}>
-                {agentBackends.map((b) => (
-                  <option key={b.backend_id} value={b.backend_id} disabled={!b.detected && b.backend_id !== "generic"}>
-                    {b.display_name} {b.backend_id !== "generic" && (b.detected ? "✓ detected" : "— not detected")}
-                  </option>
-                ))}
-              </select>
-              {agentBackend !== "generic" && (
-                <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-                  بعد از ساخت، از تب Chats می‌تونی ترمینال واقعی این ایجنت رو باز کنی — خودش خودکار به این runtime وصل
-                  می‌شه.
-                </p>
-              )}
-            </div>
-          )}
-
+        <div className="panel wizard-panel" data-testid="llm-done">
+          <h2>Your LLM is running</h2>
+          <p>
+            <strong>{runtimeName}</strong> is online on port {port}. To talk to it, open Chats. To use it with an agent, choose the
+            agent there — the app sets the agent up for this LLM.
+          </p>
           <div className="wizard-actions">
-            <button onClick={() => setStep(2)}>Back</button>
-            <button className="primary" disabled={finishing} onClick={handleFinish}>
-              {finishing ? "Finishing…" : "Finish setup"}
+            {onCancel ? <button onClick={onCancel}>{cancelLabel.replace("← ", "")}</button> : <span />}
+            <button className="primary" onClick={onComplete}>
+              Go to dashboard
             </button>
           </div>
         </div>

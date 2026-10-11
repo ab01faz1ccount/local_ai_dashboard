@@ -100,6 +100,52 @@ export interface ModelComparisonRow {
     pipeline_tag: string | null;
     eval_results: { task: string | null; dataset: string | null; metric_name: string | null; value: number | null }[];
   } | null;
+  /** What the web says about this model, with sources (see KnowledgeFact). */
+  knowledge?: ModelKnowledge;
+}
+
+// ---- Sourced facts (backend/core/knowledge.py) ----
+
+export type FactProvenance = "source" | "base_model" | "derived" | "missing";
+
+export interface BenchmarkResult {
+  dataset: string;
+  metric: string;
+  value: number | string;
+}
+
+export interface KnowledgeFact {
+  key: string;
+  label: string;
+  value: string | string[] | BenchmarkResult[] | null;
+  provenance: FactProvenance;
+  source: { label: string; url: string } | null;
+  note: string | null;
+}
+
+export interface KnowledgeProfile {
+  kind: "model" | "agent";
+  id: string;
+  url: string;
+  facts: KnowledgeFact[];
+  sources: { label: string; url: string }[];
+  fetched_at: number;
+}
+
+export interface ModelKnowledge {
+  status: "linked" | "suggested" | "none" | "error" | "offline";
+  repo: string | null;
+  profile: KnowledgeProfile | null;
+  error: string | null;
+}
+
+export interface AgentProfileResult {
+  agent_id: number;
+  status: "ok" | "unlinked" | "offline" | "error";
+  repo: string | null;
+  repo_origin: "saved" | "known" | null;
+  profile: KnowledgeProfile | null;
+  error: string | null;
 }
 
 export interface AgentSummary {
@@ -403,6 +449,70 @@ export interface HfFileCandidate {
   parts: number;
   verifiable: boolean;
   files: { path: string; size: number | null; sha256: string | null }[];
+  /** Will it run on THIS machine? Null when the hub didn't report a size. */
+  hardware_fit?: HardwareFit | null;
+  /** The GPU-only verdict (the overall one is the better of GPU and RAM). */
+  gpu_fit?: FitLabel | null;
+  /** The one file worth taking on this machine (at most one per repo). */
+  recommended?: boolean;
+}
+
+// ---- Easy connect: auto-free, custom agents, quick connect ----
+
+export type AutoFreeMode = "off" | "after_agent" | "idle";
+
+export interface AutoFreePolicy {
+  mode: AutoFreeMode;
+  grace_minutes: number;
+  idle_minutes: number;
+}
+
+export type CustomAgentMode = "env_only" | "cli_set" | "toml_file";
+
+export interface CustomAgentSpec {
+  name: string;
+  executable: string;
+  version_args?: string[];
+  launch_args?: string[];
+  config: { mode: CustomAgentMode; set_command?: string[]; get_command?: string[]; path?: string };
+  settings?: Record<string, string>;
+  env?: Record<string, string>;
+  sensitive?: string[];
+}
+
+export interface CustomAgentPreset {
+  id: string;
+  label: string;
+  config: CustomAgentSpec["config"];
+  settings?: Record<string, string>;
+  env?: Record<string, string>;
+}
+
+export interface CustomAgentCheck {
+  ok: boolean;
+  spec: CustomAgentSpec;
+  detected: boolean;
+  detected_path: string | null;
+  detected_version: string | null;
+  preview: { settings: Record<string, string>; env: Record<string, string> };
+}
+
+export interface LaunchPlan {
+  runtime: { name: string; executable_path: string; host: string; port: number; config_json: Record<string, unknown> };
+  fit: HardwareFit;
+  notes: string[];
+}
+
+export interface QuickConnectResult {
+  created_runtime: boolean;
+  plan: LaunchPlan | null;
+  started: boolean;
+  error: string | null;
+  runtime: RuntimeSummary;
+  agent?: AgentSummary;
+  commands_ran?: string[];
+  verification?: ConfigCheckReport | null;
+  endpoint: { base_url: string; model: string | null; context_length: number | null; has_key: boolean };
 }
 
 export type DownloadStatus = "queued" | "downloading" | "done" | "error" | "cancelled";
@@ -943,7 +1053,17 @@ export const api = {
     chatId: number,
     content: string,
     onEvent: (ev: SseEvent) => void,
-    opts: { temperature?: number; max_tokens?: number; signal?: AbortSignal } = {}
+    opts: {
+      temperature?: number;
+      max_tokens?: number;
+      signal?: AbortSignal;
+      /** Edit (with `content`) or retry (empty `content`): this message and everything after it is replaced. */
+      replace_from_message_id?: number;
+      /** Answer with another LLM / agent; the chat adopts them. */
+      runtime_id?: number;
+      agent_id?: number;
+      clear_agent?: boolean;
+    } = {}
   ): Promise<void> => {
     const { signal, ...body } = opts;
     const token = getStoredToken();
@@ -1043,6 +1163,23 @@ export const api = {
   listDownloads: () => request<DownloadJob[]>("/api/v1/discover/downloads"),
   cancelDownload: (id: string) =>
     request<{ cancelling: boolean }>(`/api/v1/discover/downloads/${id}/cancel`, { method: "POST" }),
+  getAutoFree: (runtimeId: number) => request<AutoFreePolicy>(`/api/v1/connect/runtimes/${runtimeId}/auto-free`),
+  setAutoFree: (runtimeId: number, policy: Partial<AutoFreePolicy> & { mode: AutoFreeMode }) =>
+    request<AutoFreePolicy>(`/api/v1/connect/runtimes/${runtimeId}/auto-free`, { method: "PUT", body: JSON.stringify(policy) }),
+  customAgentPresets: () => request<CustomAgentPreset[]>("/api/v1/connect/custom-agent/presets"),
+  checkCustomAgent: (spec: CustomAgentSpec) =>
+    request<CustomAgentCheck>("/api/v1/connect/custom-agent/validate", { method: "POST", body: JSON.stringify({ spec }) }),
+  launchPlan: (modelId: number, forAgent = true) =>
+    request<LaunchPlan>(`/api/v1/connect/models/${modelId}/launch-plan?for_agent=${forAgent}`, { method: "POST" }),
+  quickConnect: (body: { model_id: number; agent_id?: number; start?: boolean }) =>
+    request<QuickConnectResult>("/api/v1/connect/quick", { method: "POST", body: JSON.stringify(body) }),
+  getAgentProfile: (agentId: number) => request<AgentProfileResult>(`/api/v1/discover/agents/${agentId}/profile`),
+  setAgentRepo: (agentId: number, repo: string) =>
+    request<AgentSummary>(`/api/v1/discover/agents/${agentId}/repo`, { method: "PUT", body: JSON.stringify({ repo }) }),
+  getModelProfile: (repo: string, filename?: string) =>
+    request<KnowledgeProfile>(
+      `/api/v1/discover/models/profile?repo=${encodeURIComponent(repo)}${filename ? `&filename=${encodeURIComponent(filename)}` : ""}`
+    ),
   searchAgentRepos: (q: string) =>
     request<AgentRepoResult[]>(`/api/v1/discover/agents/search?q=${encodeURIComponent(q)}`),
   getAgentInstallCandidates: (repo: string) =>

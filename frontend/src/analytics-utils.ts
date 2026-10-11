@@ -83,20 +83,18 @@ export interface ChartGeometry {
   yMax: number;
 }
 
-/** Maps points into a `width` x `height` box (with `pad` px margin).
- * A single point becomes a short horizontal tick so it's still visible;
- * a perfectly flat series gets a +/-1 domain so it draws mid-chart
- * instead of dividing by zero. `fixedMax` pins the top of the y axis
- * (used for 0-100 percent metrics so a quiet 3% CPU doesn't look maxed out). */
-export function buildChartPath(
-  points: ChartPoint[],
-  width: number,
-  height: number,
-  pad = 4,
-  fixedMax?: number
-): ChartGeometry {
-  if (points.length === 0) return { path: "", yMin: 0, yMax: fixedMax ?? 1 };
+interface Scale {
+  x: (t: number) => number;
+  y: (v: number) => number;
+  yMin: number;
+  yMax: number;
+}
 
+/** The mapping from data to pixels, shared by the line and by the hover
+ * readout so the crosshair can never sit somewhere the line is not.
+ * A perfectly flat series gets a +/-1 domain so it draws mid-chart instead
+ * of dividing by zero; `fixedMax` pins the top of the y axis. */
+function makeScale(points: ChartPoint[], width: number, height: number, pad: number, fixedMax?: number): Scale {
   const stats = seriesStats(points)!;
   let yMin = fixedMax != null ? 0 : Math.min(0, stats.min);
   let yMax = fixedMax ?? stats.max;
@@ -108,9 +106,28 @@ export function buildChartPath(
   const tMax = points[points.length - 1].t;
   const innerW = width - pad * 2;
   const innerH = height - pad * 2;
+  return {
+    x: (t) => (tMax === tMin ? width / 2 : pad + ((t - tMin) / (tMax - tMin)) * innerW),
+    y: (v) => pad + innerH - ((v - yMin) / (yMax - yMin)) * innerH,
+    yMin,
+    yMax,
+  };
+}
 
-  const x = (t: number) => (tMax === tMin ? width / 2 : pad + ((t - tMin) / (tMax - tMin)) * innerW);
-  const y = (v: number) => pad + innerH - ((v - yMin) / (yMax - yMin)) * innerH;
+/** Maps points into a `width` x `height` box (with `pad` px margin).
+ * A single point becomes a short horizontal tick so it's still visible
+ * (`fixedMax` pins the top of the y axis, used for 0-100 percent metrics so
+ * a quiet 3% CPU doesn't look maxed out). */
+export function buildChartPath(
+  points: ChartPoint[],
+  width: number,
+  height: number,
+  pad = 4,
+  fixedMax?: number
+): ChartGeometry {
+  if (points.length === 0) return { path: "", yMin: 0, yMax: fixedMax ?? 1 };
+
+  const { x, y, yMin, yMax } = makeScale(points, width, height, pad, fixedMax);
 
   if (points.length === 1) {
     const cx = x(points[0].t);
@@ -119,6 +136,45 @@ export function buildChartPath(
   }
   const path = points.map((p, i) => `${i === 0 ? "M" : "L"} ${x(p.t).toFixed(1)} ${y(p.v).toFixed(1)}`).join(" ");
   return { path, yMin, yMax };
+}
+
+/** The same line closed down to the baseline, for the soft fill under it. "" for < 2 points. */
+export function buildAreaPath(points: ChartPoint[], width: number, height: number, pad = 4, fixedMax?: number): string {
+  if (points.length < 2) return "";
+  const { x, y, yMin } = makeScale(points, width, height, pad, fixedMax);
+  const line = points.map((p, i) => `${i === 0 ? "M" : "L"} ${x(p.t).toFixed(1)} ${y(p.v).toFixed(1)}`).join(" ");
+  const base = y(Math.max(yMin, 0)).toFixed(1);
+  return `${line} L ${x(points[points.length - 1].t).toFixed(1)} ${base} L ${x(points[0].t).toFixed(1)} ${base} Z`;
+}
+
+/** Where point `index` is drawn (same scale as buildChartPath). */
+export function pointPosition(
+  points: ChartPoint[],
+  index: number,
+  width: number,
+  height: number,
+  pad = 4,
+  fixedMax?: number
+): { x: number; y: number } | null {
+  if (index < 0 || index >= points.length) return null;
+  const { x, y } = makeScale(points, width, height, pad, fixedMax);
+  return { x: x(points[index].t), y: y(points[index].v) };
+}
+
+/** Index of the point drawn closest (horizontally) to viewBox x `viewX`; -1 for no points. */
+export function nearestPointIndex(points: ChartPoint[], viewX: number, width: number, pad = 4): number {
+  if (points.length === 0) return -1;
+  const { x } = makeScale(points, width, 1, pad);
+  let best = 0;
+  let bestDist = Infinity;
+  for (let i = 0; i < points.length; i++) {
+    const d = Math.abs(x(points[i].t) - viewX);
+    if (d < bestDist) {
+      bestDist = d;
+      best = i;
+    }
+  }
+  return best;
 }
 
 export function formatMetric(value: number | null | undefined, unit: string, digits = 1): string {

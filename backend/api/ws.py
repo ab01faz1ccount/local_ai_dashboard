@@ -32,6 +32,7 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from ..core import agents as agent_backends
 from ..core import events as events_module
 from ..core.agents import pairing as agent_pairing
+from ..core.idle_policy import agent_sessions
 from ..core.agents import verification as agent_verification
 from ..core.agents.pty_session import PtySession
 from ..core.runtime_manager import runtime_manager
@@ -166,9 +167,14 @@ async def agent_terminal_ws(
         await websocket.close(code=4400)
         return
 
-    adapter = agent_backends.get_adapter(agent.agent_backend)
+    try:
+        adapter = agent_backends.resolve_adapter(agent.agent_backend, agent.config_json)
+    except agent_backends.SpecError as exc:
+        await websocket.send_text(json.dumps({"type": "error", "message": f"cli_spec: {exc}"}))
+        await websocket.close(code=4400)
+        return
     if adapter is None:
-        await websocket.send_text(json.dumps({"type": "error", "message": f"backend '{agent.agent_backend}' شناخته‌شده نیست."}))
+        await websocket.send_text(json.dumps({"type": "error", "message": f"backend '{agent.agent_backend}' شناخته‌شده نیست یا spec ندارد."}))
         await websocket.close(code=4400)
         return
 
@@ -211,7 +217,9 @@ async def agent_terminal_ws(
         pass
 
     try:
-        extra_env = adapter.launch_env("sk-no-key")
+        extra_env = adapter.launch_env(
+            "sk-no-key", base_url=base_url, model_name=model_name, context_length=context_length
+        )
         session = PtySession(
             adapter.build_launch_command(),
             env={**os.environ, **extra_env} if extra_env else None,
@@ -243,6 +251,9 @@ async def agent_terminal_ws(
                 await asyncio.sleep(0.01)
 
     pump_task = asyncio.create_task(pump_output())
+    # From here until the finally below the agent counts as "using" this runtime
+    # (core/idle_policy.py frees the runtime's memory some time after the last one closes).
+    agent_sessions.opened(runtime_id)
     try:
         while True:
             raw = await websocket.receive_text()
@@ -257,5 +268,6 @@ async def agent_terminal_ws(
     except WebSocketDisconnect:
         pass
     finally:
+        agent_sessions.closed(runtime_id)
         pump_task.cancel()
         session.close()

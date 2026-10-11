@@ -42,10 +42,13 @@ from ..core import agent_discovery
 from ..core import agents as agent_backends
 from ..core import connectivity, fs_browser
 from ..core import events
+from ..core import knowledge
 from ..core import model_discovery
+from ..core import model_recommend
 from ..core import models as model_manager
 from ..core.agents import paths as agent_paths
 from ..core.net_util import DiscoveryError
+from ..core.runtime_manager import runtime_manager
 from ..storage import db as storage_db
 from ..storage.db import Agent, AppSetting
 from .http import _agent_to_dict, _model_to_dict, get_db_session, require_token
@@ -250,9 +253,16 @@ def search_models(q: str = Query(..., min_length=1)):
 def list_model_files(repo: str = Query(..., min_length=3)):
     _require_online()
     try:
-        return model_discovery.list_gguf_candidates(repo)
+        files = model_discovery.list_gguf_candidates(repo)
     except DiscoveryError as exc:
         _raise(exc)
+    # Judge every file against THIS machine before it is downloaded, and mark the
+    # one worth taking. A hardware read failure only costs the badges, never the list.
+    try:
+        hardware = runtime_manager.get_hardware_snapshot()
+    except Exception:  # noqa: BLE001
+        hardware = None
+    return model_recommend.annotate_and_recommend(files, hardware)
 
 
 def _register_finished_download(job: model_discovery.DownloadJob) -> dict:
@@ -325,6 +335,64 @@ def search_agents(q: str = Query(..., min_length=1)):
     _require_online()
     try:
         return agent_discovery.search_agents(q)
+    except DiscoveryError as exc:
+        _raise(exc)
+
+
+class AgentRepoRequest(BaseModel):
+    repo: str
+
+
+def _agent_repo(agent: Agent) -> tuple[Optional[str], Optional[str]]:
+    """(repo, where it came from): the one saved on the agent, else the one the
+    app knows for its backend, else nothing."""
+    saved = (agent.config_json or {}).get("repo")
+    if isinstance(saved, str) and saved:
+        return saved, "saved"
+    known = knowledge.KNOWN_AGENT_REPOS.get(agent.agent_backend)
+    return (known, "known") if known else (None, None)
+
+
+@router.get("/agents/{agent_id}/profile")
+def get_agent_profile(agent_id: int, db: Session = Depends(get_db_session)):
+    """What GitHub says about this agent (capabilities, licence, activity), each
+    fact with its source. `status` is "unlinked" when no repository is known
+    yet -- the UI then offers a search -- and "error" when the lookup failed."""
+    agent = db.get(Agent, agent_id)
+    if agent is None:
+        raise HTTPException(404, "agent not found")
+    repo, origin = _agent_repo(agent)
+    if repo is None:
+        return {"agent_id": agent_id, "status": "unlinked", "repo": None, "repo_origin": None, "profile": None, "error": None}
+    if not connectivity.check_internet(force=True):
+        return {"agent_id": agent_id, "status": "offline", "repo": repo, "repo_origin": origin, "profile": None, "error": None}
+    try:
+        profile = knowledge.fetch_agent_profile(repo)
+    except DiscoveryError as exc:
+        return {"agent_id": agent_id, "status": "error", "repo": repo, "repo_origin": origin, "profile": None, "error": str(exc)}
+    return {"agent_id": agent_id, "status": "ok", "repo": repo, "repo_origin": origin, "profile": profile, "error": None}
+
+
+@router.put("/agents/{agent_id}/repo")
+def set_agent_repo(agent_id: int, body: AgentRepoRequest, db: Session = Depends(get_db_session)):
+    """Remember which GitHub repository an agent is (so its profile can be looked up)."""
+    agent = db.get(Agent, agent_id)
+    if agent is None:
+        raise HTTPException(404, "agent not found")
+    repo = body.repo.strip()
+    if not agent_discovery.REPO_FULL_NAME_RE.match(repo):
+        raise HTTPException(400, "repo must look like owner/name")
+    agent.config_json = {**(agent.config_json or {}), "repo": repo}
+    db.commit()
+    return _agent_to_dict(agent)
+
+
+@router.get("/models/profile")
+def get_model_profile(repo: str = Query(..., min_length=3), filename: Optional[str] = None):
+    """The sourced facts for one Hugging Face repo (used by the online search results)."""
+    _require_online()
+    try:
+        return knowledge.fetch_model_profile(repo, filename)
     except DiscoveryError as exc:
         _raise(exc)
 

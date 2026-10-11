@@ -10,9 +10,12 @@ import { AnalyticsPage } from "./AnalyticsPage";
 import { SessionsPage } from "./SessionsPage";
 import { NotificationsPanel } from "./components/NotificationsPanel";
 import { ModelsPage } from "./ModelsPage";
-import { OnboardingWizard } from "./OnboardingWizard";
+import { SetupPage } from "./SetupPage";
 import { ProjectsPage } from "./ProjectsPage";
 import { SettingsPage } from "./SettingsPage";
+import { NavIcon, type NavIconName } from "./components/NavIcon";
+import { PaletteSwitcher } from "./components/PaletteSwitcher";
+import { applyPalette, loadPalette, savePalette, type Palette } from "./theme";
 
 /**
  * Top-level app shell.
@@ -105,8 +108,37 @@ export default function App() {
 
 type View = "dashboard" | "models" | "projects" | "chats" | "sessions" | "analytics" | "mcp" | "permissions" | "logs" | "setup" | "settings";
 
+/** Sidebar entries in groups; a gap separates groups (no labels needed). */
+const NAV_GROUPS: { id: View; label: string; icon: NavIconName }[][] = [
+  [
+    { id: "dashboard", label: "Dashboard", icon: "dashboard" },
+    { id: "chats", label: "Chats", icon: "chats" },
+    { id: "projects", label: "Projects", icon: "projects" },
+  ],
+  [
+    { id: "models", label: "Models", icon: "models" },
+    { id: "sessions", label: "Sessions", icon: "sessions" },
+    { id: "analytics", label: "Analytics", icon: "analytics" },
+  ],
+  [
+    { id: "mcp", label: "MCP", icon: "mcp" },
+    { id: "permissions", label: "Permissions", icon: "permissions" },
+    { id: "logs", label: "Logs", icon: "logs" },
+  ],
+  [
+    { id: "setup", label: "Setup", icon: "setup" },
+    { id: "settings", label: "Settings", icon: "settings" },
+  ],
+];
+
 function MainShell() {
   const [view, setView] = useState<View>("dashboard");
+  const [palette, setPalette] = useState<Palette>(() => loadPalette());
+  function choosePalette(next: Palette) {
+    setPalette(next);
+    applyPalette(next);
+    savePalette(next);
+  }
   const [pendingChatId, setPendingChatId] = useState<number | null>(null);
   // The Chats page is mounted on first visit and then only hidden: a live agent
   // terminal (a real process) used to be killed and restarted every time the
@@ -124,42 +156,39 @@ function MainShell() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="sidebar-brand">Local AI Control Center</div>
-        <nav className="sidebar-nav">
-          <button className={view === "dashboard" ? "active" : ""} onClick={() => setView("dashboard")}>
-            Dashboard
-          </button>
-          <button className={view === "models" ? "active" : ""} onClick={() => setView("models")}>
-            Models
-          </button>
-          <button className={view === "projects" ? "active" : ""} onClick={() => setView("projects")}>
-            Projects
-          </button>
-          <button className={view === "chats" ? "active" : ""} onClick={() => setView("chats")}>
-            Chats
-          </button>
-          <button className={view === "sessions" ? "active" : ""} onClick={() => setView("sessions")}>
-            Sessions
-          </button>
-          <button className={view === "analytics" ? "active" : ""} onClick={() => setView("analytics")}>
-            Analytics
-          </button>
-          <button className={view === "mcp" ? "active" : ""} onClick={() => setView("mcp")}>
-            MCP
-          </button>
-          <button className={view === "permissions" ? "active" : ""} onClick={() => setView("permissions")}>
-            Permissions
-          </button>
-          <button className={view === "logs" ? "active" : ""} onClick={() => setView("logs")}>
-            Logs
-          </button>
-          <button className={view === "setup" ? "active" : ""} onClick={() => setView("setup")}>
-            Setup
-          </button>
-          <button className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}>
-            Settings
-          </button>
+        <div className="sidebar-brand">
+          <span className="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <circle cx="8" cy="12" r="3" />
+              <path d="M13 7.500a6 6 0 0 1 0 9" />
+              <path d="M17 4.500a10 10 0 0 1 0 15" />
+            </svg>
+          </span>
+          <span className="brand-name">Local AI Control Center</span>
+        </div>
+        <nav className="sidebar-nav" aria-label="Main">
+          {NAV_GROUPS.map((group, i) => (
+            <div key={group[0].id}>
+              {i > 0 && <div className="sidebar-gap" />}
+              {group.map((item) => (
+                <button
+                  key={item.id}
+                  className={view === item.id ? "active" : ""}
+                  aria-current={view === item.id ? "page" : undefined}
+                  title={item.label}
+                  onClick={() => setView(item.id)}
+                >
+                  <NavIcon name={item.icon} />
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </div>
+          ))}
         </nav>
+        <div className="sidebar-footer">
+          <span>Colour</span>
+          <PaletteSwitcher value={palette} onChange={choosePalette} />
+        </div>
       </aside>
 
       {view === "dashboard" && <Dashboard onAddRuntime={() => setView("setup")} />}
@@ -175,9 +204,7 @@ function MainShell() {
       {view === "mcp" && <McpPage />}
       {view === "permissions" && <PermissionsPage />}
       {view === "logs" && <LogsPage />}
-      {view === "setup" && (
-        <OnboardingWizard onComplete={() => setView("dashboard")} onCancel={() => setView("dashboard")} />
-      )}
+      {view === "setup" && <SetupPage onDone={() => setView("dashboard")} />}
       {view === "settings" && <SettingsPage />}
       <PermissionPrompt />
       <NotificationsPanel />

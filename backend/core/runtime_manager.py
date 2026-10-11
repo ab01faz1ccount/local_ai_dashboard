@@ -57,11 +57,13 @@ class RuntimeManager:
         self._emit_for_outcome(runtime, status, phase="start")
         return status
 
-    def stop(self, db: Session, runtime: Runtime, timeout: float = 10.0) -> EngineStatus:
+    def stop(self, db: Session, runtime: Runtime, timeout: float = 10.0, reason: Optional[str] = None) -> EngineStatus:
+        """`reason` is recorded on the runtime.stopped event (e.g. "auto_free:
+        idle for 10 min") so the log can tell an automatic stop from a manual one."""
         engine = self._get_or_create_engine(runtime)
         status = engine.stop(timeout=timeout)
         self._sync_db(db, runtime, status)
-        self._emit_for_outcome(runtime, status, phase="stop")
+        self._emit_for_outcome(runtime, status, phase="stop", reason=reason)
         return status
 
     def restart(self, db: Session, runtime: Runtime) -> EngineStatus:
@@ -118,14 +120,18 @@ class RuntimeManager:
         if runtime.model_id is not None:
             events.emit(events.EventType.MODEL_LOADED, runtime_id=runtime.id, metadata={"model_id": runtime.model_id})
 
-    def _emit_for_outcome(self, runtime: Runtime, status: EngineStatus, *, phase: str) -> None:
+    def _emit_for_outcome(self, runtime: Runtime, status: EngineStatus, *, phase: str, reason: Optional[str] = None) -> None:
         """Shared by start()/stop(): report exactly what happened, not
         just what was asked for -- a failed stop still ends in ERROR, not
         OFFLINE, and that has to show up as runtime.crashed, not silence."""
         if status.state == RuntimeState.ONLINE:
             self._emit_started(runtime, status)
         elif status.state == RuntimeState.OFFLINE:
-            events.emit(events.EventType.RUNTIME_STOPPED, runtime_id=runtime.id)
+            events.emit(
+                events.EventType.RUNTIME_STOPPED,
+                runtime_id=runtime.id,
+                metadata={"reason": reason} if reason else None,
+            )
             if runtime.model_id is not None:
                 events.emit(
                     events.EventType.MODEL_UNLOADED, runtime_id=runtime.id, metadata={"model_id": runtime.model_id}

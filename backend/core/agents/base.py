@@ -94,9 +94,11 @@ class AgentAdapter(ABC):
         told, or it plans against its own default, not the server's."""
         return {}
 
-    def launch_env(self, api_key: str = "sk-no-key") -> dict[str, str]:
+    def launch_env(self, api_key: str = "sk-no-key", **endpoint) -> dict[str, str]:
         """Extra environment variables the agent's process needs (e.g. a key an
-        agent reads from its environment instead of storing in its config)."""
+        agent reads from its environment instead of storing in its config).
+        `endpoint` carries base_url / model_name / context_length for adapters
+        (the data-driven generic one) whose variables are built from them."""
         return {}
 
     def read_setting(self, key: str) -> Optional[str]:

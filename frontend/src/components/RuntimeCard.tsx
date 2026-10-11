@@ -3,6 +3,7 @@ import type { ModelSummary, RuntimeMetrics, RuntimeSummary } from "../api";
 import { formatTokensPerSec } from "../format";
 import { StatusLed } from "./StatusLed";
 import { FileBrowserDialog } from "./FileBrowserDialog";
+import { AutoFreeControl } from "./AutoFreeControl";
 
 interface RuntimeEditPayload {
   name?: string;
@@ -200,6 +201,7 @@ export function RuntimeCard({ runtime, metrics, models, onStart, onStop, onResta
               Delete
             </button>
           </div>
+          <AutoFreeControl runtimeId={runtime.id} />
         </>
       )}
       {pickingExecutable && (

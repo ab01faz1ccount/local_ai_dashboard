@@ -10,6 +10,7 @@ import {
 } from "./api";
 import { HardwareStrip } from "./components/HardwareStrip";
 import { MappingPanel } from "./components/MappingPanel";
+import { QuickConnectPanel } from "./components/QuickConnectPanel";
 import { RuntimeCard } from "./components/RuntimeCard";
 
 /**
@@ -146,6 +147,8 @@ export function Dashboard({ onAddRuntime }: { onAddRuntime: () => void }) {
           </button>
         </div>
       </section>
+
+      <QuickConnectPanel onConnected={() => void refreshRuntimes()} />
 
       <section>
         <div className="section-heading">

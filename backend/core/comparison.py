@@ -66,16 +66,10 @@ def estimate_system_impact(model: MLModel) -> dict:
     model's true hidden-dim/layer count (not stored), so it is
     deliberately a coarse, labeled estimate, not a promise.
     """
-    base_mb = model.file_size_bytes / (1024 * 1024)
-
-    # ~ generic small-to-mid dense model KV-cache footprint per 1K context
-    # tokens at fp16 KV cache; deliberately conservative/generic since we
-    # don't have per-model architecture details (layers, heads, dim).
-    kv_cache_mb_per_1k_context = 80.0
-    context = model.context_length or 4096
-    estimated_kv_cache_mb = (context / 1000.0) * kv_cache_mb_per_1k_context
-
-    estimated_total_mb = base_mb + estimated_kv_cache_mb
+    est = hardware_fit.estimate_memory_mb(model.file_size_bytes, model.context_length)
+    base_mb = est["base_mb"]
+    estimated_kv_cache_mb = est["kv_cache_mb"]
+    estimated_total_mb = est["total_mb"]
 
     return {
         "estimated_base_mb": round(base_mb, 1),
@@ -153,6 +147,31 @@ def _metadata_dict(model: MLModel) -> dict:
     }
 
 
+def sourced_profile_for_model(model: MLModel) -> dict:
+    """What the web says about this model, with its source. Never raises:
+
+      status "linked"    -- the model is linked to a Hugging Face repo
+      status "suggested" -- not linked; the repo found by searching its name
+                            (the UI says so and offers to link it)
+      status "none"      -- not linked and nothing matched
+      status "error"     -- the lookup failed (`error` says why)
+    """
+    from . import knowledge
+    from .net_util import DiscoveryError
+
+    repo, status = model.hf_repo_id, "linked"
+    try:
+        if not repo:
+            match = knowledge.find_model_repo(model.name)
+            if match is None:
+                return {"status": "none", "repo": None, "profile": None, "error": None}
+            repo, status = match["repo_id"], "suggested"
+        profile = knowledge.fetch_model_profile(repo, model.hf_filename or model.name)
+        return {"status": status, "repo": repo, "profile": profile, "error": None}
+    except DiscoveryError as exc:
+        return {"status": "error", "repo": repo, "profile": None, "error": str(exc)}
+
+
 def compare_models(db: Session, model_ids: list[int], hardware: Optional[dict] = None) -> dict:
     """Builds one comparison row per requested model, in the order given.
     Skips ids that don't exist rather than raising, so a stale id in a
@@ -188,6 +207,7 @@ def compare_models(db: Session, model_ids: list[int], hardware: Optional[dict] =
             "hardware_fit": hardware_fit.assess_from_snapshot(impact["estimated_total_mb"], hardware),
             "real_world_performance": storage_db.get_model_performance_stats(db, model.id),
             "public_benchmarks": benchmarks,
+            "knowledge": sourced_profile_for_model(model) if internet_available else {"status": "offline", "repo": None, "profile": None, "error": None},
         }
         rows.append(row)
     return {"internet_available": internet_available, "rows": rows}

@@ -1,4 +1,6 @@
 import type { ModelComparisonRow } from "../api";
+import { factKeysInOrder, findFact, safeSourceUrl } from "../knowledge-utils";
+import { FactCell } from "./FactCell";
 import { FitBadge } from "./FitBadge";
 
 function formatMb(mb: number): string {
@@ -11,8 +13,18 @@ function formatMb(mb: number): string {
  * table -- estimated figures and observed figures should never look like
  * the same kind of number to the user.
  */
-export function ModelCompareTable({ rows, internetAvailable }: { rows: ModelComparisonRow[]; internetAvailable: boolean }) {
+export function ModelCompareTable({
+  rows,
+  internetAvailable,
+  onLinkRepo,
+}: {
+  rows: ModelComparisonRow[];
+  internetAvailable: boolean;
+  /** Called when the user accepts the repository the app found by searching a model's name. */
+  onLinkRepo?: (modelId: number, repo: string) => void;
+}) {
   if (rows.length === 0) return null;
+  const webRows = factKeysInOrder(rows.map((r) => r.knowledge?.profile));
 
   return (
     <div className="compare-table-wrap">
@@ -100,31 +112,59 @@ export function ModelCompareTable({ rows, internetAvailable }: { rows: ModelComp
 
           <tr className="compare-section-row">
             <td colSpan={rows.length + 1}>
-              Public benchmarks (Hugging Face card){!internetAvailable && " — نیاز به اتصال اینترنت"}
+              From the web — every fact links to its source{!internetAvailable && " (needs an internet connection)"}
             </td>
           </tr>
           <tr>
-            <td>Eval results</td>
-            {rows.map((r) => (
-              <td key={r.metadata.id}>
-                {!r.metadata.hf_repo_id ? (
-                  "not linked to HF"
-                ) : !internetAvailable ? (
-                  "آفلاین — نمی‌شه چک کرد"
-                ) : !r.public_benchmarks || r.public_benchmarks.eval_results.length === 0 ? (
-                  "none published"
-                ) : (
-                  <ul className="compare-eval-list">
-                    {r.public_benchmarks.eval_results.map((ev, i) => (
-                      <li key={i}>
-                        {ev.dataset ?? ev.task ?? "eval"}: {ev.metric_name} = {ev.value}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </td>
-            ))}
+            <td>Looked up as</td>
+            {rows.map((r) => {
+              const k = r.knowledge;
+              const link = safeSourceUrl(k?.profile?.url);
+              return (
+                <td key={r.metadata.id}>
+                  {!k || k.status === "offline" ? (
+                    <span className="fact-missing">Offline — can't look this up</span>
+                  ) : k.status === "none" ? (
+                    <span className="fact-missing">No matching Hugging Face repo found — link one from the Models table</span>
+                  ) : k.status === "error" ? (
+                    <span className="error-text">{k.error ?? "Lookup failed."}</span>
+                  ) : (
+                    <div className="fact-cell">
+                      {link ? (
+                        <a className="fact-source" href={link} target="_blank" rel="noreferrer noopener">
+                          {k.repo} ↗
+                        </a>
+                      ) : (
+                        <span>{k.repo}</span>
+                      )}
+                      {k.status === "suggested" && (
+                        <div className="fact-meta">
+                          <span className="fact-tag" data-provenance="derived">
+                            best match from searching its name — check it is the right model
+                          </span>
+                          {onLinkRepo && k.repo && (
+                            <button className="link-button" onClick={() => onLinkRepo(r.metadata.id, k.repo!)}>
+                              Link it
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </td>
+              );
+            })}
           </tr>
+          {webRows.map(({ key, label }) => (
+            <tr key={key}>
+              <td>{label}</td>
+              {rows.map((r) => (
+                <td key={r.metadata.id}>
+                  {r.knowledge?.profile ? <FactCell fact={findFact(r.knowledge.profile, key)} /> : <span className="fact-missing">—</span>}
+                </td>
+              ))}
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>

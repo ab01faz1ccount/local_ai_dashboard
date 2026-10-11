@@ -7,6 +7,8 @@ import {
   type HfModelResult,
 } from "../api";
 import { formatBytes, formatCount, formatDate, formatSpeed } from "../browse-utils";
+import { recommendedFirst } from "../connect-utils";
+import { FitBadge } from "./FitBadge";
 import { FileBrowserDialog } from "./FileBrowserDialog";
 import "../browse.css";
 
@@ -207,7 +209,7 @@ export function OnlineModelSearch({
                   <div className="browse-meta">فایل GGUF قابل اجرایی توی این repo نبود.</div>
                 )}
                 {Array.isArray(files) &&
-                  files.map((f) => {
+                  recommendedFirst(files).map((f) => {
                     const active = jobFor(r.repo_id, f.filename);
                     return (
                       <div className="browse-file-row" key={f.filename}>
@@ -217,8 +219,17 @@ export function OnlineModelSearch({
                             {f.quantization && <span className="browse-badge">{f.quantization}</span>}
                             {f.parts > 1 && <span className="browse-badge">{f.parts} parts</span>}
                             {f.verifiable && <span className="browse-badge ok">SHA256 check</span>}
+                            {f.recommended && <span className="browse-badge ok">Recommended for this PC</span>}
                           </div>
-                          <div className="browse-meta">{formatBytes(f.size_bytes)}</div>
+                          <div className="browse-meta">
+                            {formatBytes(f.size_bytes)}
+                            {f.hardware_fit && (
+                              <>
+                                {" · "}
+                                <FitBadge fit={f.hardware_fit} />
+                              </>
+                            )}
+                          </div>
                         </div>
                         <button
                           className="primary"

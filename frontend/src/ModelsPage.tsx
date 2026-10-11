@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { api, type ModelComparisonRow, type ModelSummary } from "./api";
+import { api, type AgentBackendInfo, type AgentProfileResult, type AgentSummary, type ModelComparisonRow, type ModelSummary } from "./api";
+import { AgentCompareTable } from "./components/AgentCompareTable";
 import { ModelCompareTable } from "./components/ModelCompareTable";
 import { VerificationBadge } from "./components/VerificationBadge";
 
@@ -27,6 +28,13 @@ export function ModelsPage() {
   const [hfFileDraft, setHfFileDraft] = useState("");
   const pollHandles = useRef<Record<number, number>>({});
 
+  // "Agents" tab: what each agent is and can do, from its repository
+  const [tab, setTab] = useState<"models" | "agents">("models");
+  const [agents, setAgents] = useState<AgentSummary[]>([]);
+  const [backends, setBackends] = useState<AgentBackendInfo[]>([]);
+  const [selectedAgentIds, setSelectedAgentIds] = useState<Set<number>>(new Set());
+  const [agentProfiles, setAgentProfiles] = useState<Record<number, AgentProfileResult | undefined>>({});
+
   async function refreshModels() {
     try {
       setModels(await api.listModels());
@@ -45,6 +53,47 @@ export function ModelsPage() {
       Object.values(pollHandles.current).forEach((h) => window.clearInterval(h));
     };
   }, []);
+
+  useEffect(() => {
+    if (tab !== "agents" || agents.length > 0) return;
+    Promise.all([api.listAgents(), api.listAgentBackends()])
+      .then(([a, b]) => {
+        setAgents(a);
+        setBackends(b);
+      })
+      .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load agents."));
+  }, [tab, agents.length]);
+
+  async function loadAgentProfile(id: number) {
+    setAgentProfiles((prev) => ({ ...prev, [id]: undefined }));
+    try {
+      const result = await api.getAgentProfile(id);
+      setAgentProfiles((prev) => ({ ...prev, [id]: result }));
+    } catch (err) {
+      setAgentProfiles((prev) => ({
+        ...prev,
+        [id]: { agent_id: id, status: "error", repo: null, repo_origin: null, profile: null, error: err instanceof Error ? err.message : "Lookup failed." },
+      }));
+    }
+  }
+
+  function toggleAgent(id: number) {
+    const adding = !selectedAgentIds.has(id);
+    setSelectedAgentIds((prev) => {
+      const next = new Set(prev);
+      if (adding) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+    if (adding && agentProfiles[id] === undefined) void loadAgentProfile(id);
+  }
+
+  /** The app found a repo for this model by searching its name and the user accepted it. */
+  async function handleLinkRepo(modelId: number, repo: string) {
+    const updated = await api.updateModel(modelId, { hf_repo_id: repo });
+    setModels((prev) => prev.map((m) => (m.id === modelId ? updated : m)));
+    await handleCompare();
+  }
 
   function toggleSelected(id: number) {
     setSelectedIds((prev) => {
@@ -147,6 +196,45 @@ export function ModelsPage() {
         </div>
       )}
 
+      <div className="segmented" role="tablist" aria-label="What to compare">
+        <button role="tab" aria-selected={tab === "models"} className={tab === "models" ? "selected" : ""} onClick={() => setTab("models")}>
+          LLMs
+        </button>
+        <button role="tab" aria-selected={tab === "agents"} className={tab === "agents" ? "selected" : ""} onClick={() => setTab("agents")}>
+          Agents
+        </button>
+      </div>
+
+      {tab === "agents" && (
+        <section>
+          <div className="section-heading">
+            <h2>Agents</h2>
+          </div>
+          <p className="muted">Pick one or more agents to see what each can do, from its own repository — every fact links to where it came from.</p>
+          {agents.length === 0 ? (
+            <div className="panel empty-state">No agents yet — add one from Setup.</div>
+          ) : (
+            <>
+              <div className="agent-picker">
+                {agents.map((a) => (
+                  <label key={a.id} className="agent-pick">
+                    <input type="checkbox" checked={selectedAgentIds.has(a.id)} onChange={() => toggleAgent(a.id)} />
+                    {a.name}
+                  </label>
+                ))}
+              </div>
+              <AgentCompareTable
+                agents={agents.filter((a) => selectedAgentIds.has(a.id))}
+                backends={backends}
+                profiles={agentProfiles}
+                onLinked={(id) => void loadAgentProfile(id)}
+              />
+            </>
+          )}
+        </section>
+      )}
+
+      {tab === "models" && (
       <section>
         <div className="section-heading">
           <h2>Models</h2>
@@ -231,14 +319,15 @@ export function ModelsPage() {
           </tbody>
         </table>
       </section>
+      )}
 
-      {comparison && (
+      {tab === "models" && comparison && (
         <section>
           <div className="section-heading">
             <h2>Comparison</h2>
             <button onClick={() => setComparison(null)}>Close</button>
           </div>
-          <ModelCompareTable rows={comparison} internetAvailable={comparisonOnline} />
+          <ModelCompareTable rows={comparison} internetAvailable={comparisonOnline} onLinkRepo={(id, repo) => void handleLinkRepo(id, repo)} />
         </section>
       )}
     </div>

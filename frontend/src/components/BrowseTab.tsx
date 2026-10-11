@@ -11,19 +11,27 @@ type Kind = "models" | "agents";
 type Picker = "model-file" | "model-folder" | "agent-file" | null;
 
 /**
- * Settings -> Browse.
+ * Setup -> Add a model / Add an agent.
  *
  *   Offline: the LLM/agent is already on this machine -- pick it with a
  *            file browser and it's added, no internet involved.
  *   Online:  search trusted sites by an approximate name (Hugging Face for
  *            models, GitHub for agents) and install from there.
  *
- * `onChanged` lets the Settings page refresh its agent/runtime lists
- * after something was added here.
+ * `onChanged` lets the host refresh its lists after something was added.
  */
-export function BrowseTab({ onChanged }: { onChanged?: () => void }) {
+export function BrowseTab({
+  onChanged,
+  kind: fixedKind,
+}: {
+  onChanged?: () => void;
+  /** When the caller already knows what is being added (Setup opens one
+   * option at a time), the Models/Agents switch is hidden. */
+  kind?: Kind;
+}) {
   const [mode, setMode] = useState<Mode>("offline");
-  const [kind, setKind] = useState<Kind>("models");
+  const [pickedKind, setKind] = useState<Kind>("models");
+  const kind = fixedKind ?? pickedKind;
   const [online, setOnline] = useState<boolean | null>(null);
   const [picker, setPicker] = useState<Picker>(null);
 
@@ -91,14 +99,14 @@ export function BrowseTab({ onChanged }: { onChanged?: () => void }) {
             Online (search)
           </button>
         </div>
-        <div className="browse-segmented" role="group" aria-label="What to look for">
+        {!fixedKind && <div className="browse-segmented" role="group" aria-label="What to look for">
           <button className={kind === "models" ? "active" : ""} onClick={() => switchKind("models")}>
             Models (LLM)
           </button>
           <button className={kind === "agents" ? "active" : ""} onClick={() => switchKind("agents")}>
             Agents (CLI)
           </button>
-        </div>
+        </div>}
       </div>
 
       {mode === "offline" && kind === "models" && (

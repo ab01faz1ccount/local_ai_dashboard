@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  buildChartPath, buildSeries, formatMetric, hasGaps, rangeToSince, seriesStats, RANGE_MS, type ChartPoint,
+  buildAreaPath, buildChartPath, buildSeries, nearestPointIndex, pointPosition, formatMetric, hasGaps, rangeToSince, seriesStats, RANGE_MS, type ChartPoint,
 } from "../src/analytics-utils";
 import type { MetricsSnapshotItem } from "../src/api";
 
@@ -135,4 +135,35 @@ describe("formatMetric", () => {
     expect(formatMetric(NaN, "%")).toBe("—");
   });
   it("zero is a real value, not a dash", () => expect(formatMetric(0, "%")).toBe("0.0%"));
+});
+
+describe("hover helpers", () => {
+  const pts: ChartPoint[] = [{ t: 0, v: 0 }, { t: 1000, v: 50 }, { t: 2000, v: 100 }];
+
+  it("pointPosition agrees with the drawn path", () => {
+    const g = buildChartPath(pts, 104, 54, 2, 100);
+    const p = pointPosition(pts, 1, 104, 54, 2, 100)!;
+    expect(g.path).toContain(`L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`);
+  });
+  it("pointPosition is null for an index that does not exist", () => {
+    expect(pointPosition(pts, 3, 100, 50)).toBeNull();
+    expect(pointPosition(pts, -1, 100, 50)).toBeNull();
+    expect(pointPosition([], 0, 100, 50)).toBeNull();
+  });
+  it("nearestPointIndex picks the closest drawn point", () => {
+    // width 104, pad 2 -> points at x = 2, 52, 102
+    expect(nearestPointIndex(pts, 0, 104, 2)).toBe(0);
+    expect(nearestPointIndex(pts, 20, 104, 2)).toBe(0);
+    expect(nearestPointIndex(pts, 40, 104, 2)).toBe(1);
+    expect(nearestPointIndex(pts, 80, 104, 2)).toBe(2);
+    expect(nearestPointIndex(pts, 9999, 104, 2)).toBe(2);
+    expect(nearestPointIndex([], 10, 100)).toBe(-1);
+  });
+  it("buildAreaPath closes the line down to the baseline; nothing for < 2 points", () => {
+    const d = buildAreaPath(pts, 104, 54, 2, 100);
+    expect(d.startsWith("M ")).toBe(true);
+    expect(d.endsWith("Z")).toBe(true);
+    expect(buildAreaPath([pts[0]], 100, 50)).toBe("");
+    expect(buildAreaPath([], 100, 50)).toBe("");
+  });
 });

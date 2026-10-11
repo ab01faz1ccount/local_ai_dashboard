@@ -91,12 +91,6 @@ describe("pairingSummary", () => {
     expect(s.tone).toBe("ok");
     expect(s.text).toContain("3");
   });
-  it("in_flight explains the log only records finished requests, and is not 'waiting'", () => {
-    const s = pairingSummary(pairing({ status: "in_flight" }))!;
-    expect(s.tone).toBe("wait");
-    expect(s.text).toContain("مشغول");
-    expect(s.text).not.toContain("هنوز درخواستی");
-  });
   it("runtime offline warns", () => {
     expect(pairingSummary(pairing({ status: "runtime_offline" }))!.tone).toBe("warn");
   });

@@ -16,6 +16,8 @@ vi.mock("../src/api", async (orig) => {
       listRuntimes: vi.fn(),
       listAgents: vi.fn(),
       listEvents: vi.fn(),
+      getRuntimeLogs: vi.fn(),
+      getRuntimeInspect: vi.fn(),
     },
     connectEventsSocket: vi.fn((onEvent: (ev: LogEvent) => void) => {
       socketHandler = onEvent;
@@ -233,5 +235,27 @@ describe("LogsPage", () => {
     await waitFor(() => expect(m.listEvents).toHaveBeenCalledTimes(1));
     unmount();
     expect(socketCleanup).toHaveBeenCalled();
+  });
+
+  it("Server output tab shows the chosen runtime's llama-server log and filters it", async () => {
+    m.getRuntimeLogs.mockResolvedValue({
+      lines: ["0.01.100.000 I load_tensors: offloaded 33/33 layers", "0.02.000.000 E srv  bad thing happened"],
+    });
+    render(<LogsPage />);
+    await userEvent.click(screen.getByRole("tab", { name: "Server output" }));
+    // one runtime exists, so it is used without asking
+    await waitFor(() => expect(m.getRuntimeLogs).toHaveBeenCalledWith(1, expect.any(Number)));
+    expect(await screen.findByText(/offloaded 33\/33/)).toBeInTheDocument();
+    expect(screen.queryByRole("table")).toBeNull(); // events table is hidden
+    expect(screen.queryByRole("button", { name: /Pause|Resume/ })).toBeNull();
+  });
+
+  it("Server output asks for a runtime when several exist and none is chosen", async () => {
+    m.listRuntimes.mockResolvedValue([RUNTIMES[0], { ...RUNTIMES[0], id: 2, name: "LLM2" }]);
+    render(<LogsPage />);
+    await waitFor(() => expect(m.listRuntimes).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole("tab", { name: "Server output" }));
+    expect(await screen.findByText(/Choose a runtime above/)).toBeInTheDocument();
+    expect(m.getRuntimeLogs).not.toHaveBeenCalled();
   });
 });

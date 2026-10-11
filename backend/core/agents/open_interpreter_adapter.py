@@ -127,7 +127,7 @@ class OpenInterpreterAdapter(AgentAdapter):
         ran.append(f"write {path}")
         return ran
 
-    def launch_env(self, api_key: str = "sk-no-key") -> dict[str, str]:
+    def launch_env(self, api_key: str = "sk-no-key", **_endpoint) -> dict[str, str]:
         return {API_KEY_ENV: api_key}
 
     def build_launch_command(self, resume_session_id: Optional[str] = None) -> list[str]:
