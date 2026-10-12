@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, apiErrorMessage, type MetricsSnapshotItem, type RuntimeSummary } from "./api";
 import { buildSeries, RANGE_MS, rangeToSince, type TimeRange } from "./analytics-utils";
 import { LineChart } from "./components/LineChart";
+import { RankingsPanel } from "./components/RankingsPanel";
 import { StatusBar } from "./components/StatusBar";
 import { bucketActivity } from "./status-bar-utils";
 
@@ -126,6 +127,8 @@ export function AnalyticsPage() {
         </div>
         </>
       )}
+
+      <RankingsPanel />
     </div>
   );
 }

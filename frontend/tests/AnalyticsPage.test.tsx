@@ -8,6 +8,8 @@ vi.mock("../src/api", async (orig) => {
   const actual = await orig<typeof import("../src/api")>();
   return { ...actual, api: { listRuntimes: vi.fn(), getRuntimeMetricsHistory: vi.fn() } };
 });
+// The rankings panel has its own tests (Rankings.test.tsx) and its own data calls.
+vi.mock("../src/components/RankingsPanel", () => ({ RankingsPanel: () => null }));
 import { api } from "../src/api";
 const m = api as unknown as Record<string, ReturnType<typeof vi.fn>>;
 
