@@ -299,14 +299,24 @@ export function SettingsPage() {
       <section>
         <div className="section-heading">
           <h2>Settings</h2>
-          <nav className="sidebar-nav" style={{ flexDirection: "row", gap: 8 }}>
-            <button className={tab === "runtimes" ? "active" : ""} onClick={() => setTab("runtimes")}>
+          <div className="segmented flush" role="tablist" aria-label="Settings section">
+            <button
+              role="tab"
+              aria-selected={tab === "runtimes"}
+              className={tab === "runtimes" ? "selected" : ""}
+              onClick={() => setTab("runtimes")}
+            >
               Runtimes (llama.cpp)
             </button>
-            <button className={tab === "agents" ? "active" : ""} onClick={() => setTab("agents")}>
+            <button
+              role="tab"
+              aria-selected={tab === "agents"}
+              className={tab === "agents" ? "selected" : ""}
+              onClick={() => setTab("agents")}
+            >
               Agents
             </button>
-          </nav>
+          </div>
         </div>
 
         {tab === "runtimes" && (

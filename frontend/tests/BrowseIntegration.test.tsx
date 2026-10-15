@@ -147,7 +147,7 @@ describe("Settings page", () => {
     render(<SettingsPage />);
     await waitFor(() => expect(m.listAgents).toHaveBeenCalled());
     expect(screen.queryByRole("button", { name: "Browse" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Agents" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Agents" })).toBeInTheDocument();
   });
 });
 
@@ -228,7 +228,7 @@ describe("Setup wizard", () => {
   it("a finished online download gets selected so Continue works", async () => {
     m.listDownloads.mockResolvedValueOnce([]).mockResolvedValue([]);
     m.listModels.mockResolvedValueOnce([]).mockResolvedValue([model(9, "Cool")]);
-    m.searchHfModels.mockResolvedValue([{ repo_id: "a/Cool", author: "a", name: "Cool", downloads: 1, likes: 1, updated: null, gated: false, url: "https://huggingface.co/a/Cool", relevance: 1 }]);
+    m.searchHfModels.mockResolvedValue({ query: { text: "cool", size_b: null, quant: null, purpose: "any", corrected_from: null }, results: [{ repo_id: "a/Cool", author: "a", name: "Cool", downloads: 1, likes: 1, updated: null, gated: false, url: "https://huggingface.co/a/Cool", relevance: 1 }] });
     m.listHfFiles.mockResolvedValue([{ filename: "Cool-Q4_K_M.gguf", display_name: "Cool-Q4_K_M", quantization: "Q4_K_M", size_bytes: 10, parts: 1, verifiable: true, files: [] }]);
     m.startModelDownload.mockResolvedValue({ id: "j", repo_id: "a/Cool", filename: "Cool-Q4_K_M.gguf", status: "downloading", downloaded_bytes: 1, total_bytes: 10, current_file: null, note: null, speed_bps: 0, error: null, local_path: null, result: {}, started_at: 1, finished_at: null });
     render(<OnboardingWizard onComplete={() => {}} />);

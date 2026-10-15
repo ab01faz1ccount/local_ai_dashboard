@@ -185,3 +185,42 @@ def list_directory(
         "roots": roots,
         "truncated": truncated,
     }
+
+
+def system_downloads_dir() -> Optional[Path]:
+    """The operating system's own Downloads folder (not a guess at "~/Downloads"
+    on machines where it was moved), or None when it can't be found."""
+    candidates: list[Path] = []
+    if os.name == "nt":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class _GUID(ctypes.Structure):
+                _fields_ = [("a", wintypes.DWORD), ("b", wintypes.WORD), ("c", wintypes.WORD), ("d", ctypes.c_ubyte * 8)]
+
+            # FOLDERID_Downloads {374DE290-123F-4565-9164-39C4925E467B}
+            guid = _GUID(0x374DE290, 0x123F, 0x4565, (ctypes.c_ubyte * 8)(0x91, 0x64, 0x39, 0xC4, 0x92, 0x5E, 0x46, 0x7B))
+            buf = ctypes.c_wchar_p()
+            if ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(guid), 0, None, ctypes.byref(buf)) == 0 and buf.value:
+                candidates.append(Path(buf.value))
+                ctypes.windll.ole32.CoTaskMemFree(buf)
+        except Exception:  # noqa: BLE001 - fall back to the profile folder below
+            pass
+    else:
+        cfg = Path.home() / ".config" / "user-dirs.dirs"
+        try:
+            for line in cfg.read_text(encoding="utf-8").splitlines():
+                if line.startswith("XDG_DOWNLOAD_DIR="):
+                    raw = line.split("=", 1)[1].strip().strip('"').replace("$HOME", str(Path.home()))
+                    candidates.append(Path(raw))
+        except OSError:
+            pass
+    candidates.append(Path.home() / "Downloads")
+    for c in candidates:
+        try:
+            if c.is_dir():
+                return c
+        except OSError:
+            continue
+    return None

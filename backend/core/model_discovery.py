@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Callable, Optional
 from urllib.parse import quote
 
+from . import model_search
 from .net_util import DiscoveryError, get_json, open_url
 
 HF_HOST = "huggingface.co"
@@ -101,11 +102,62 @@ def _query_variants(tokens: list[str]) -> list[str]:
 # Search + file listing
 # ---------------------------------------------------------------------
 
-def search_models(query: str, limit: int = SEARCH_LIMIT) -> list[dict]:
-    tokens = _tokens(query)
-    if not tokens:
-        raise DiscoveryError("یه اسم (حتی تقریبی) برای مدل بنویس.", "bad_input")
+FOLLOWER_LOOKUPS = 8  # distinct publishers looked up per search
+FOLLOWER_TTL_S = 24 * 3600
+_follower_cache: dict[str, tuple[float, Optional[int]]] = {}
+_follower_lock = threading.Lock()
 
+
+def fetch_followers(author: str) -> Optional[int]:
+    """Follower count of a Hugging Face publisher, or None when it can't be
+    read. A publisher is either an organization or a user, so both public
+    overview endpoints are tried; whatever comes back that isn't a plain
+    number is treated as "not published" and nothing is guessed."""
+    key = author.lower()
+    now = time.time()
+    with _follower_lock:
+        hit = _follower_cache.get(key)
+        if hit and now - hit[0] < FOLLOWER_TTL_S:
+            return hit[1]
+    value: Optional[int] = None
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", author):
+        for kind in ("organizations", "users"):
+            try:
+                data = get_json(f"https://{HF_HOST}/api/{kind}/{quote(author)}/overview", allowed_hosts=HF_ALLOWED_HOSTS)
+            except DiscoveryError:
+                continue
+            if isinstance(data, dict):
+                for field_name in ("numFollowers", "followerCount", "followers"):
+                    v = data.get(field_name)
+                    if isinstance(v, int) and not isinstance(v, bool) and v >= 0:
+                        value = v
+                        break
+            if value is not None:
+                break
+    with _follower_lock:
+        _follower_cache[key] = (now, value)
+    return value
+
+
+def _followers_for(authors: list[str]) -> dict[str, Optional[int]]:
+    unique = list(dict.fromkeys(a for a in authors))[:FOLLOWER_LOOKUPS]
+    out: dict[str, Optional[int]] = {}
+
+    def work(a: str) -> None:
+        try:
+            out[a] = fetch_followers(a)
+        except Exception:  # noqa: BLE001 - decoration only; never break a search
+            out[a] = None
+
+    threads = [threading.Thread(target=work, args=(a,), daemon=True) for a in unique]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=8)
+    return out
+
+
+def _hf_hits(tokens: list[str], limit: int) -> dict[str, dict]:
     merged: dict[str, dict] = {}
     for i, variant in enumerate(_query_variants(tokens)):
         # Stop widening once there's enough to choose from; the first
@@ -137,9 +189,70 @@ def search_models(query: str, limit: int = SEARCH_LIMIT) -> list[dict]:
                 "url": f"https://{HF_HOST}/{repo_id}",
                 "relevance": round(_relevance(repo_id, tokens), 3),
             }
+    return merged
 
-    ranked = sorted(merged.values(), key=lambda r: (-r["relevance"], -r["downloads"]))
-    return ranked[:limit]
+
+def search_models_full(
+    query: str,
+    limit: int = SEARCH_LIMIT,
+    *,
+    purpose: Optional[str] = None,
+    hardware: Optional[dict] = None,
+    with_followers: bool = True,
+) -> dict:
+    """{"query": what was understood, "results": ranked hits}.
+
+    Ranking is model_search.score_repo: name match, a penalty for extra
+    words (modified versions), publisher trust, downloads, likes and
+    followers. Nothing is filtered out on purpose or quantization; those only
+    add points."""
+    parsed = model_search.parse_query(query)
+    if not parsed["tokens"]:
+        raise DiscoveryError("یه اسم (حتی تقریبی) برای مدل بنویس.", "bad_input")
+
+    tokens = parsed["tokens"]
+    merged = _hf_hits(tokens, limit)
+
+    # Too little back usually means a typo in the family name ("qwwn").
+    if len(merged) < 3:
+        fixed, changed = model_search.correct_tokens(tokens)
+        if changed:
+            more = _hf_hits(fixed, limit)
+            if more:
+                parsed = {**parsed, "tokens": fixed, "text": " ".join(fixed), "corrected_from": " ".join(tokens)}
+                merged = {**more, **merged}
+                tokens = fixed
+
+    if purpose not in model_search.PURPOSES:
+        purpose = None
+
+    items = list(merged.values())
+    # Score on the first pass without followers to decide who is worth a lookup.
+    first = model_search.rank([model_search.score_repo(i, parsed, None, purpose) for i in items])
+    followers: dict[str, Optional[int]] = {}
+    if with_followers and first:
+        followers = _followers_for([r["author"] for r in first[: limit + 4]])
+    scored = model_search.rank(
+        [model_search.score_repo(i, parsed, followers.get(i["author"]), purpose) for i in items]
+    )[:limit]
+    for r in scored:
+        r["fit_hint"] = model_search.fit_hint(r["params_b"], hardware)
+    return {
+        "query": {
+            "text": parsed["text"],
+            "size_b": parsed["size_b"],
+            "quant": parsed["quant"],
+            "purpose": purpose or "any",
+            "corrected_from": parsed["corrected_from"],
+        },
+        "results": scored,
+    }
+
+
+def search_models(query: str, limit: int = SEARCH_LIMIT, **kwargs) -> list[dict]:
+    """The ranked hits only (no follower lookups unless asked)."""
+    kwargs.setdefault("with_followers", False)
+    return search_models_full(query, limit, **kwargs)["results"]
 
 
 @dataclass

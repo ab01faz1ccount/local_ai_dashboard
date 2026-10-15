@@ -38,7 +38,11 @@ export function NotificationsPanel() {
   return (
     <div className="notifications">
       <button className="notifications-bell" onClick={toggle} aria-label="Notifications" aria-expanded={open}>
-        🔔{unread > 0 && <span className="notifications-badge" aria-label={`${unread} unread`}>{unread}</span>}
+        <svg className="bell-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M6 9a6 6 0 0 1 12 0c0 5 2 6.5 2 6.5H4S6 14 6 9Z" />
+          <path d="M10 19a2 2 0 0 0 4 0" />
+        </svg>
+        {unread > 0 && <span className="notifications-badge" aria-label={`${unread} unread`}>{unread}</span>}
       </button>
       {open && (
         <div className="panel notifications-dropdown" role="region" aria-label="Notifications list">

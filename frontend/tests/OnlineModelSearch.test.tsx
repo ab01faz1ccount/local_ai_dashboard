@@ -17,6 +17,7 @@ vi.mock("../src/api", async (orig) => {
 import { api } from "../src/api";
 const m = api as unknown as Record<string, ReturnType<typeof vi.fn>>;
 
+const resp = (results: unknown[], query: Record<string, unknown> = {}) => ({ query: { text: "q", size_b: null, quant: null, purpose: "any", corrected_from: null, ...query }, results });
 const result = (repo: string, extra = {}) => ({
   repo_id: repo, author: repo.split("/")[0], name: repo.split("/")[1], downloads: 12345, likes: 7,
   updated: "2026-02-01T00:00:00Z", gated: false, url: `https://huggingface.co/${repo}`, relevance: 1, ...extra,
@@ -39,7 +40,7 @@ afterEach(() => { vi.useRealTimers(); });
 
 describe("OnlineModelSearch", () => {
   it("searches, shows files for a repo, and starts a download for the chosen quantization", async () => {
-    m.searchHfModels.mockResolvedValue([result("acme/Cool-3B-GGUF"), result("zed/Cool-3B-Instruct", { gated: true })]);
+    m.searchHfModels.mockResolvedValue(resp([result("acme/Cool-3B-GGUF"), result("zed/Cool-3B-Instruct", { gated: true })]));
     m.listHfFiles.mockResolvedValue([file("Cool-Q4_K_M.gguf", "Q4_K_M", 2_000_000_000), file("Cool-Q8_0.gguf", "Q8_0", 3_400_000_000)]);
     m.startModelDownload.mockResolvedValue(job());
     render(<OnlineModelSearch />);
@@ -64,7 +65,7 @@ describe("OnlineModelSearch", () => {
   });
 
   it("gated repos are flagged and cannot be downloaded from here", async () => {
-    m.searchHfModels.mockResolvedValue([result("zed/Gated-7B", { gated: true })]);
+    m.searchHfModels.mockResolvedValue(resp([result("zed/Gated-7B", { gated: true })]));
     m.listHfFiles.mockResolvedValue([file("g.gguf", "Q4_K_M", 100)]);
     render(<OnlineModelSearch />);
     await userEvent.type(screen.getByLabelText("Model name"), "gated{Enter}");
@@ -82,12 +83,12 @@ describe("OnlineModelSearch", () => {
   });
 
   it("empty result and empty file list have their own messages", async () => {
-    m.searchHfModels.mockResolvedValueOnce([]);
+    m.searchHfModels.mockResolvedValueOnce(resp([]));
     render(<OnlineModelSearch />);
     await userEvent.type(screen.getByLabelText("Model name"), "zzz{Enter}");
     expect(await screen.findByText(/چیزی پیدا نشد/)).toBeInTheDocument();
-    m.searchHfModels.mockResolvedValueOnce([result("a/b")]);
-    m.listHfFiles.mockResolvedValueOnce([]);
+    m.searchHfModels.mockResolvedValueOnce(resp([result("a/b")]));
+    m.listHfFiles.mockResolvedValueOnce(resp([]));
     await userEvent.clear(screen.getByLabelText("Model name"));
     await userEvent.type(screen.getByLabelText("Model name"), "b{Enter}");
     await userEvent.click(await screen.findByRole("button", { name: "Show files" }));
@@ -152,9 +153,113 @@ describe("OnlineModelSearch", () => {
     m.fsList.mockResolvedValue({ path: "/mnt/big", parent: "/mnt", entries: [], roots: [], truncated: false });
     m.setModelsDir.mockResolvedValue({ path: "/mnt/big" });
     render(<OnlineModelSearch />);
-    await userEvent.click(await screen.findByRole("button", { name: "Change…" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Choose folder…" }));
     await userEvent.click(await screen.findByRole("button", { name: "Select this folder" }));
     expect(m.setModelsDir).toHaveBeenCalledWith("/mnt/big");
     expect(await screen.findByText("/mnt/big")).toBeInTheDocument();
   });
 });
+
+describe("OnlineModelSearch ranking UI", () => {
+  const trusted = { tier: "quantizer", label: "Well-known GGUF publisher", followers: 4200 };
+  const unknown = { tier: "unknown", label: "Publisher not on the known list", followers: null };
+
+  async function searchFor(text: string) {
+    render(<OnlineModelSearch />);
+    await userEvent.type(screen.getByLabelText("Model name"), `${text}{Enter}`);
+  }
+
+  it("shows trust signals, keeps modified versions apart and marks the best match", async () => {
+    m.searchHfModels.mockResolvedValue(resp([
+      result("lmstudio-community/Qwen3.5-9B-GGUF", { role: "conversion", trust: trusted, why: ["Same name as your search", "4.2k followers"] }),
+      result("nobody/Qwen3.5-9B-Uncensored", { role: "variant", trust: unknown, extra_words: ["uncensored"] }),
+    ]));
+    await searchFor("qwen3.5 9b");
+    expect(await screen.findByText("lmstudio-community/Qwen3.5-9B-GGUF")).toBeInTheDocument();
+    expect(screen.getByText("Best match")).toBeInTheDocument();
+    expect(screen.getByText("Known publisher")).toBeInTheDocument();
+    expect(screen.getByText("4.2k followers")).toBeInTheDocument();
+    expect(screen.getByText("followers n/a")).toBeInTheDocument();
+    expect(screen.getByText(/Same name as your search/)).toBeInTheDocument();
+    const details = document.querySelector("details.variants") as HTMLDetailsElement;
+    expect(details).not.toBeNull();
+    expect(details.open).toBe(false);
+    expect(details.textContent).toMatch(/1 modified version/);
+    expect(details.textContent).toContain("nobody/Qwen3.5-9B-Uncensored");
+  });
+
+  it("'Trusted publishers only' hides unknown publishers and says how many are hidden", async () => {
+    m.searchHfModels.mockResolvedValue(resp([
+      result("lmstudio-community/A-9B", { role: "conversion", trust: trusted }),
+      result("nobody/A-9B", { role: "conversion", trust: unknown }),
+    ]));
+    await searchFor("a 9b");
+    await screen.findByText("nobody/A-9B");
+    await userEvent.click(screen.getByRole("button", { name: "Trusted publishers only" }));
+    expect(screen.queryByText("nobody/A-9B")).toBeNull();
+    expect(screen.getByText("lmstudio-community/A-9B")).toBeInTheDocument();
+    expect(screen.getByText(/1 hidden by filters/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(screen.getByText("nobody/A-9B")).toBeInTheDocument();
+  });
+
+  it("says when the filters hide everything instead of looking like 'no results'", async () => {
+    m.searchHfModels.mockResolvedValue(resp([result("nobody/A-9B", { role: "conversion", trust: unknown })]));
+    await searchFor("a 9b");
+    await screen.findByText("nobody/A-9B");
+    await userEvent.click(screen.getByRole("button", { name: "Trusted publishers only" }));
+    expect(screen.getByText(/The filters hide all 1 results/)).toBeInTheDocument();
+  });
+
+  it("choosing what it is for searches again with that purpose", async () => {
+    m.searchHfModels.mockResolvedValue(resp([result("a/B-7B")]));
+    await searchFor("b 7b");
+    await screen.findByText("a/B-7B");
+    await userEvent.click(screen.getByRole("button", { name: "Coding" }));
+    await waitFor(() => expect(m.searchHfModels).toHaveBeenLastCalledWith("b 7b", "coding"));
+    expect(screen.getByRole("button", { name: "Coding" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("explains how the query was understood, including a repaired typo and the quantization", async () => {
+    m.searchHfModels.mockResolvedValue(resp([result("a/Qwen3.5-9B-GGUF")], {
+      text: "qwen3.5 9b", size_b: 9, quant: "Q6_K_M", corrected_from: "qwwn3.5 9b",
+    }));
+    await searchFor("qwwn3.5-9B-Q6KM");
+    expect(await screen.findByText(/you typed “qwwn3.5 9b”/)).toBeInTheDocument();
+    expect(screen.getByText("Q6_K_M")).toBeInTheDocument();
+  });
+
+  it("opening files puts the typed quantization first and tags it; says so when none match", async () => {
+    m.searchHfModels.mockResolvedValue(resp([result("a/Qwen-9B-GGUF")], { quant: "Q6_K_M" }));
+    m.listHfFiles.mockResolvedValue([file("Q4.gguf", "Q4_K_M", 5e9), file("Q6.gguf", "Q6_K_M", 7e9)]);
+    await searchFor("qwen 9b q6km");
+    await userEvent.click(await screen.findByRole("button", { name: "Show files" }));
+    expect(await screen.findByText("Matches your Q6_K_M")).toBeInTheDocument();
+    const rows = Array.from(document.querySelectorAll(".browse-file-row"));
+    expect(rows[0].textContent).toContain("Q6");
+  });
+
+  it("tells the person no file matches the typed quantization", async () => {
+    m.searchHfModels.mockResolvedValue(resp([result("a/Qwen-9B-GGUF")], { quant: "Q6_K_M" }));
+    m.listHfFiles.mockResolvedValue([file("Q4.gguf", "Q4_K_M", 5e9)]);
+    await searchFor("qwen 9b q6km");
+    await userEvent.click(await screen.findByRole("button", { name: "Show files" }));
+    expect(await screen.findByText(/No file here is Q6_K_M/)).toBeInTheDocument();
+  });
+
+  it("shows the name-based size estimate with a caveat", async () => {
+    m.searchHfModels.mockResolvedValue(resp([
+      result("a/B-9B", { fit_hint: { approx_q4_bytes: 5.4e9, label: "WARNING", target: "gpu" } }),
+    ]));
+    await searchFor("b 9b");
+    const badge = await screen.findByText(/at Q4/);
+    expect(badge.getAttribute("title")).toMatch(/Estimated from the parameter count/);
+  });
+
+  it("the download folder is a labelled bar with a choose button", async () => {
+    render(<OnlineModelSearch />);
+    expect(await screen.findByText("Save downloads to")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Choose folder…" })).toBeInTheDocument();
+  });
+});
+

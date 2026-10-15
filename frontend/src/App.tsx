@@ -14,8 +14,9 @@ import { SetupPage } from "./SetupPage";
 import { ProjectsPage } from "./ProjectsPage";
 import { SettingsPage } from "./SettingsPage";
 import { NavIcon, type NavIconName } from "./components/NavIcon";
+import { ModeSwitcher } from "./components/ModeSwitcher";
 import { PaletteSwitcher } from "./components/PaletteSwitcher";
-import { applyPalette, loadPalette, savePalette, type Palette } from "./theme";
+import { applyMode, applyPalette, loadMode, loadPalette, saveMode, savePalette, type Mode, type Palette } from "./theme";
 
 /**
  * Top-level app shell.
@@ -139,6 +140,12 @@ function MainShell() {
     applyPalette(next);
     savePalette(next);
   }
+  const [mode, setMode] = useState<Mode>(() => loadMode());
+  function chooseMode(next: Mode) {
+    setMode(next);
+    applyMode(next);
+    saveMode(next);
+  }
   const [pendingChatId, setPendingChatId] = useState<number | null>(null);
   // The Chats page is mounted on first visit and then only hidden: a live agent
   // terminal (a real process) used to be killed and restarted every time the
@@ -187,6 +194,7 @@ function MainShell() {
         </nav>
         <div className="sidebar-footer">
           <span>Colour</span>
+          <ModeSwitcher value={mode} onChange={chooseMode} />
           <PaletteSwitcher value={palette} onChange={choosePalette} />
         </div>
       </aside>

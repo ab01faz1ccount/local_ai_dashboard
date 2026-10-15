@@ -7,6 +7,13 @@ import {
   loadPalette,
   normalizePalette,
   savePalette,
+  DEFAULT_MODE,
+  MODES,
+  MODE_STORAGE_KEY,
+  applyMode,
+  loadMode,
+  normalizeMode,
+  saveMode,
 } from "../src/theme";
 
 const memoryStorage = (initial: Record<string, string> = {}) => {
@@ -68,5 +75,43 @@ describe("applyPalette", () => {
     expect(el.getAttribute("data-palette")).toBe("mint");
     applyPalette("aqua", el);
     expect(el.getAttribute("data-palette")).toBe("aqua");
+  });
+});
+
+
+describe("mode (soft dark / soft light background)", () => {
+  it("dark is the default and the two real modes are kept", () => {
+    expect(DEFAULT_MODE).toBe("dark");
+    expect(normalizeMode("light")).toBe("light");
+    expect(normalizeMode("dark")).toBe("dark");
+    for (const v of [null, undefined, "", "sepia", "LIGHT", 1, {}]) expect(normalizeMode(v)).toBe("dark");
+    for (const m of MODES) expect(normalizeMode(m.id)).toBe(m.id);
+    expect(MODES.map((m) => m.id)).toEqual(["light", "dark"]);
+  });
+  it("round-trips through storage, separately from the palette", () => {
+    const s = memoryStorage();
+    saveMode("light", s);
+    savePalette("mint", s);
+    expect(s.data[MODE_STORAGE_KEY]).toBe("light");
+    expect(MODE_STORAGE_KEY).not.toBe(PALETTE_STORAGE_KEY);
+    expect(loadMode(s)).toBe("light");
+    expect(loadPalette(s)).toBe("mint");
+  });
+  it("corrupt, missing or throwing storage gives the default and never throws", () => {
+    expect(loadMode(memoryStorage({ [MODE_STORAGE_KEY]: "purple" }))).toBe("dark");
+    expect(loadMode(null)).toBe("dark");
+    const broken = { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("denied"); } };
+    expect(loadMode(broken)).toBe("dark");
+    expect(() => saveMode("light", broken)).not.toThrow();
+    expect(() => saveMode("light", null)).not.toThrow();
+  });
+  it("sets data-mode on the root element and leaves data-palette alone", () => {
+    const el = document.createElement("div");
+    applyPalette("mint", el);
+    applyMode("light", el);
+    expect(el.getAttribute("data-mode")).toBe("light");
+    expect(el.getAttribute("data-palette")).toBe("mint");
+    applyMode("dark", el);
+    expect(el.getAttribute("data-mode")).toBe("dark");
   });
 });

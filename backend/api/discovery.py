@@ -201,11 +201,23 @@ def register_local_agent(body: RegisterLocalRequest, db: Session = Depends(get_d
 # Models dir setting (where online downloads land)
 # ---------------------------------------------------------------------
 
+DOWNLOADS_SUBFOLDER = "Local AI models"
+
+
+def default_models_dir() -> Path:
+    """Until the user picks a folder: a tidy subfolder of the system Downloads
+    folder (one place they already know), else next to the app's database."""
+    downloads = fs_browser.system_downloads_dir()
+    if downloads is not None:
+        return downloads / DOWNLOADS_SUBFOLDER
+    return Path(storage_db.DEFAULT_DB_PATH).resolve().parent / "models"
+
+
 def _get_models_dir(db: Session) -> Path:
     row = db.get(AppSetting, MODELS_DIR_SETTING)
     if row and row.value:
         return Path(row.value)
-    return Path(storage_db.DEFAULT_DB_PATH).resolve().parent / "models"
+    return default_models_dir()
 
 
 @router.get("/models/dir")
@@ -241,10 +253,16 @@ def set_models_dir(body: ModelsDirRequest, db: Session = Depends(get_db_session)
 # ---------------------------------------------------------------------
 
 @router.get("/models/search")
-def search_models(q: str = Query(..., min_length=1)):
+def search_models(q: str = Query(..., min_length=1), purpose: Optional[str] = Query(default=None)):
+    """Ranked Hugging Face GGUF repos, plus how the query was understood.
+    `purpose` (chat | coding | vision | reasoning) only adds points."""
     _require_online()
     try:
-        return model_discovery.search_models(q)
+        hardware = runtime_manager.get_hardware_snapshot()
+    except Exception:  # noqa: BLE001 - the size hint is decoration
+        hardware = None
+    try:
+        return model_discovery.search_models_full(q, purpose=purpose, hardware=hardware)
     except DiscoveryError as exc:
         _raise(exc)
 

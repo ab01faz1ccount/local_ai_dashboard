@@ -4,11 +4,14 @@
    inputs, panels). Page-specific rules in styles.css keep working because
    they are written against these same variable names.
 
-   Direction: black surfaces, one gradient as the identity. The gradient is
+   Direction: soft dark (default) or soft light surfaces (data-mode), one
+   gradient as the identity. The gradient is
    spent in a few places only -- the brand mark, primary buttons, the active
    nav marker, the selected palette swatch (and, in a later step, gauges).
    Everything else is quiet greys. Two palettes, picked by the user:
-     aqua  white -> blue          mint  white -> light green
+     aqua  blue                   mint  green
+   The gradient switches with the background: on dark it runs white -> colour,
+   on light it runs black -> colour, so it always contrasts with the page.
    Fonts are the OS's own (Segoe UI Variable / Cascadia on Windows): nothing
    is downloaded, so the app looks the same fully offline.
    ===================================================================== */
@@ -597,3 +600,152 @@ a:focus-visible {
 .bump-table th, .bump-table td { padding: 4px 10px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
 .rankings { margin-top: 24px; }
 @media (prefers-reduced-motion: reduce) { .bump-line, .bump-dot { transition: none; } }
+
+/* Tabs that sit in a heading row (Settings, Projects, Chat view) */
+.segmented.flush { margin: 0; }
+
+/* Notifications: an outline bell in the app's own style, not an emoji */
+.notifications-bell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.notifications-bell:hover { color: var(--text-primary); background: var(--surface-raised); }
+.notifications-bell[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); }
+.notifications-badge { top: -4px; right: -4px; border: 2px solid var(--bg, #0e1217); box-sizing: content-box; }
+.notifications-dropdown { top: 44px; }
+
+/* ---- Online model search: folder bar, chips, result cards ------------- */
+.online-search .folder-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.folder-icon { color: var(--accent); flex: none; }
+.folder-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.folder-label { font-size: 11.5px; color: var(--text-muted); }
+.folder-path { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: ltr; text-align: left; }
+.folder-change { flex: none; }
+
+.chip-row, .filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0; }
+.chip-label { font-size: 12px; color: var(--text-muted); margin-right: 2px; }
+.chip {
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.chip:hover:not(:disabled) { color: var(--text-primary); background: var(--surface-raised); }
+.chip.on { background: var(--surface-raised); color: var(--text-primary); border-color: var(--accent); }
+.chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chip-reset { border: 0; background: transparent; color: var(--accent); font-size: 12.5px; cursor: pointer; text-decoration: underline; }
+.filter-select { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-muted); }
+.filter-select select { padding: 3px 8px; }
+
+.understood { font-size: 12.5px; color: var(--text-muted); margin: 4px 0 8px; }
+.understood strong { color: var(--text-primary); font-weight: 600; }
+
+.result-card .result-main { min-width: 0; }
+.result-stats { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+.result-why { margin-top: 4px; font-size: 12px; color: var(--text-muted); }
+.result-card.top-pick { border-color: var(--accent); }
+.browse-badge.info { background: var(--surface-raised); color: var(--text-primary); }
+
+.variants { margin-top: 12px; }
+.variants > summary { cursor: pointer; color: var(--text-muted); font-size: 13px; padding: 6px 0; }
+.variants > summary:hover { color: var(--text-primary); }
+
+/* Agent locations: one bar per agent program */
+.agent-locations { margin-bottom: 12px; }
+.agent-locations .folder-bar { margin-bottom: 8px; }
+
+/* =====================================================================
+   Background mode: dark (the default above) or light.
+   Neither end is pure: the dark surfaces are soft charcoal and the light ones
+   a cool paper grey, so the page is never glaring. Mode and palette are
+   independent, so all four combinations exist. These rules come last and
+   carry equal or higher specificity than the palette rules above, so they win
+   regardless of what the palette attribute says.
+   ===================================================================== */
+:root[data-mode="light"] {
+  color-scheme: light;
+
+  --bg: #e4e8ee;
+  --surface: #f3f5f8;
+  --surface-raised: #e9edf2;
+  --border: #d2d8e0;
+  --border-strong: #b9c2ce;
+
+  --text-primary: #19202a;
+  --text-muted: #525d6d;
+  --text-faint: #6b7686;
+
+  --status-online: #0f8a5f;
+  --status-starting: #a86c00;
+  --status-stopping: #a86c00;
+  --status-error: #cf2f36;
+  --status-offline: #8a94a1;
+
+  /* aqua accent on light */
+  --accent: #1f66e0;
+  --accent-strong: #154fb8;
+  --accent-text: #ffffff;
+  --accent-glow: rgba(31, 102, 224, 0.28);
+  --accent-soft: rgba(31, 102, 224, 0.1);
+  /* the gradient swaps with the background: white -> colour on dark, black -> colour on light */
+  --gradient: linear-gradient(135deg, #0b0f14 0%, #123a8a 45%, #2f6fe0 100%);
+}
+
+:root[data-mode="light"][data-palette="mint"] {
+  --accent: #0b8a5a;
+  --accent-strong: #06704a;
+  --accent-text: #ffffff;
+  --accent-glow: rgba(11, 138, 90, 0.26);
+  --accent-soft: rgba(11, 138, 90, 0.1);
+  --gradient: linear-gradient(135deg, #0b0f14 0%, #0a5a3c 45%, #0e8a5c 100%);
+}
+
+/* a touch lifted off black so dark is soft too */
+:root[data-mode="dark"] { --bg: #090c10; }
+
+/* things that were written for a dark page */
+:root[data-mode="light"] .proof-warn,
+:root[data-mode="light"] .log-line.log-warn { color: #8a5a00; }
+:root[data-mode="light"] .log-line.log-error { color: #b4232a; }
+:root[data-mode="light"] .proof-ok { color: var(--accent-strong); }
+:root[data-mode="light"] .gauge[data-tone="warn"] { --gauge-from: #f7d98f; --gauge-to: #d99a1f; }
+:root[data-mode="light"] .gauge[data-tone="hot"] { --gauge-from: #f5b4b4; --gauge-to: #d84a4a; }
+:root[data-mode="light"] .notifications-badge { border-color: var(--bg); }
+:root[data-mode="light"] .browse-backdrop { background: rgba(25, 32, 42, 0.45); }
+
+/* chart series, validated against the light surface (#f5f6f8): lightness band,
+   chroma, adjacent colour-blind separation and 3:1 contrast all pass */
+:root[data-mode="light"] .bump-chart {
+  --series-0: #2f6fd0; --series-1: #c24a15; --series-2: #0f8a5f; --series-3: #a86c00;
+  --series-4: #c23a6d; --series-5: #007a00; --series-6: #6c5fd6; --series-7: #d03c3c;
+}
+
+/* the accent circles follow the same swap */
+:root[data-mode="light"] .palette-swatch-aqua { background: linear-gradient(135deg, #0b0f14 0%, #123a8a 45%, #2f6fe0 100%); }
+:root[data-mode="light"] .palette-swatch-mint { background: linear-gradient(135deg, #0b0f14 0%, #0a5a3c 45%, #0e8a5c 100%); }
+
+/* the two background circles, set a little apart from the two accent circles */
+.mode-switcher { margin-left: auto; margin-right: 10px; padding-right: 12px; border-right: 1px solid var(--border-strong); }
+.mode-swatch-light { background: #e9ecf1; }
+.mode-swatch-dark { background: #0b0f14; }
+:root[data-mode="light"] a { color: var(--accent-strong); }

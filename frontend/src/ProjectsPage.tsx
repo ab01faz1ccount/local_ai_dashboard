@@ -165,17 +165,32 @@ export function ProjectsPage({ onOpenChat }: { onOpenChat: (chatId: number) => v
         <section>
           <div className="section-heading">
             <h2>{selectedProject.name}</h2>
-            <nav className="sidebar-nav" style={{ flexDirection: "row", gap: 8 }}>
-              <button className={tab === "chats" ? "active" : ""} onClick={() => setTab("chats")}>
+            <div className="segmented flush" role="tablist" aria-label="Project section">
+              <button
+                role="tab"
+                aria-selected={tab === "chats"}
+                className={tab === "chats" ? "selected" : ""}
+                onClick={() => setTab("chats")}
+              >
                 Chats
               </button>
-              <button className={tab === "git" ? "active" : ""} onClick={() => setTab("git")}>
+              <button
+                role="tab"
+                aria-selected={tab === "git"}
+                className={tab === "git" ? "selected" : ""}
+                onClick={() => setTab("git")}
+              >
                 Git
               </button>
-              <button className={tab === "usage" ? "active" : ""} onClick={() => setTab("usage")}>
+              <button
+                role="tab"
+                aria-selected={tab === "usage"}
+                className={tab === "usage" ? "selected" : ""}
+                onClick={() => setTab("usage")}
+              >
                 Usage
               </button>
-            </nav>
+            </div>
           </div>
 
           {tab === "chats" && (

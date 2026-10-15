@@ -439,6 +439,31 @@ export interface HfModelResult {
   gated: boolean;
   url: string;
   relevance: number;
+  /** Ranking, from the backend. Optional so older/minimal payloads still render. */
+  score?: number;
+  why?: string[];
+  trust?: { tier: "creator" | "quantizer" | "unknown"; label: string; followers: number | null };
+  /** "conversion" = the model itself, re-packaged; "variant" = a modified version (fine-tune, uncensored...). */
+  role?: "conversion" | "variant";
+  extra_words?: string[];
+  group_key?: string;
+  params_b?: number | null;
+  quants_in_name?: string[];
+  /** Typical Q4 size for the name's parameter count, judged against this PC. An estimate from the name. */
+  fit_hint?: { approx_q4_bytes: number; label: FitLabel | null; target: "gpu" | "cpu" | null } | null;
+}
+
+export type SearchPurpose = "any" | "chat" | "coding" | "vision" | "reasoning";
+
+export interface HfSearchResponse {
+  query: {
+    text: string;
+    size_b: number | null;
+    quant: string | null;
+    purpose: SearchPurpose;
+    corrected_from: string | null;
+  };
+  results: HfModelResult[];
 }
 
 export interface HfFileCandidate {
@@ -1151,8 +1176,10 @@ export const api = {
   getModelsDir: () => request<{ path: string }>("/api/v1/discover/models/dir"),
   setModelsDir: (path: string) =>
     request<{ path: string }>("/api/v1/discover/models/dir", { method: "PUT", body: JSON.stringify({ path }) }),
-  searchHfModels: (q: string) =>
-    request<HfModelResult[]>(`/api/v1/discover/models/search?q=${encodeURIComponent(q)}`),
+  searchHfModels: (q: string, purpose?: SearchPurpose) =>
+    request<HfSearchResponse>(
+      `/api/v1/discover/models/search?q=${encodeURIComponent(q)}${purpose && purpose !== "any" ? `&purpose=${purpose}` : ""}`
+    ),
   listHfFiles: (repo: string) =>
     request<HfFileCandidate[]>(`/api/v1/discover/models/files?repo=${encodeURIComponent(repo)}`),
   startModelDownload: (repo_id: string, filename: string) =>

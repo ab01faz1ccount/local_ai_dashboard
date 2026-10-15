@@ -369,12 +369,19 @@ export function ChatView({ initialChatId }: { initialChatId?: number | null } = 
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   {hasRealBackend && (
-                    <div className="sidebar-nav" style={{ flexDirection: "row", gap: 4 }}>
-                      <button className={viewMode === "chat" ? "active" : ""} onClick={() => setViewMode("chat")}>
+                    <div className="segmented flush" role="tablist" aria-label="View">
+                      <button
+                        role="tab"
+                        aria-selected={viewMode === "chat"}
+                        className={viewMode === "chat" ? "selected" : ""}
+                        onClick={() => setViewMode("chat")}
+                      >
                         Chat
                       </button>
                       <button
-                        className={viewMode === "terminal" ? "active" : ""}
+                        role="tab"
+                        aria-selected={viewMode === "terminal"}
+                        className={viewMode === "terminal" ? "selected" : ""}
                         onClick={() => setViewMode("terminal")}
                       >
                         Terminal

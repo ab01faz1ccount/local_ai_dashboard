@@ -185,9 +185,12 @@ describe("QuickConnectPanel", () => {
 
 describe("OnlineModelSearch fit", () => {
   it("shows each file's fit, marks the recommended one and lists it first", async () => {
-    m.searchHfModels.mockResolvedValue([
-      { repo_id: "acme/Cool-3B-GGUF", author: "acme", name: "Cool-3B-GGUF", downloads: 1, likes: 1, updated: "2026-02-01T00:00:00Z", gated: false, url: "https://huggingface.co/acme/Cool-3B-GGUF", relevance: 1 },
-    ]);
+    m.searchHfModels.mockResolvedValue({
+      query: { text: "cool", size_b: null, quant: null, purpose: "any", corrected_from: null },
+      results: [
+        { repo_id: "acme/Cool-3B-GGUF", author: "acme", name: "Cool-3B-GGUF", downloads: 1, likes: 1, updated: "2026-02-01T00:00:00Z", gated: false, url: "https://huggingface.co/acme/Cool-3B-GGUF", relevance: 1 },
+      ],
+    });
     const f = (name: string, size: number, label: string, recommended: boolean) => ({
       filename: name, display_name: name.replace(".gguf", ""), quantization: null, size_bytes: size, parts: 1, verifiable: false, files: [],
       hardware_fit: fit(label), gpu_fit: label, recommended,
