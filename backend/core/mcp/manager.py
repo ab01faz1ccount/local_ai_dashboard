@@ -39,6 +39,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import sys
+import tempfile
 import threading
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -137,6 +138,30 @@ def _flatten_exception(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
 
 
+STDERR_TAIL_CHARS = 300
+
+
+def _stderr_tail(f: Any, max_chars: int = STDERR_TAIL_CHARS) -> str:
+    """The last few lines a stdio server wrote to stderr, on one line.
+    "Connection closed" alone never says why; this usually does (a missing
+    folder, a bad flag, a crash trace)."""
+    if f is None:
+        return ""
+    try:
+        f.flush()
+        f.seek(0)
+        text = f.read()
+    except Exception:  # noqa: BLE001 - diagnostics must never break error reporting
+        return ""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    joined = " | ".join(lines[-4:])
+    return joined[-max_chars:]
+
+
+def _with_server_output(message: str, tail: str) -> str:
+    return f"{message} -- server said: {tail}" if tail else message
+
+
 def _redact(text: str, secrets: list[str]) -> str:
     for s in secrets:
         text = text.replace(s, "***")
@@ -198,6 +223,8 @@ class McpManager:
         self._loop_lock = threading.Lock()
 
         self._live: dict[int, _Live] = {}  # touched only from the loop thread
+        # server id -> temp file receiving a stdio server's stderr (see _open_transport)
+        self._stderr_files: dict[int, Any] = {}
         self._busy: set[int] = set()  # server ids with a connect/disconnect in flight
         self._state_lock = threading.Lock()
 
@@ -244,7 +271,14 @@ class McpManager:
                 args=list(cfg.args),
                 env=dict(cfg.env) or None,
             )
-            return stdio_client(params, errlog=sys.stderr)
+            # The server's stderr goes to a temp file instead of this
+            # process's console, so a failed connect can show WHY. (A server
+            # that logs heavily for days grows the file; it is deleted when
+            # the connection ends.)
+            self._close_stderr(cfg.id)
+            errf = tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace")
+            self._stderr_files[cfg.id] = errf
+            return stdio_client(params, errlog=errf)
         if cfg.transport == "http":
             from mcp.client.streamable_http import streamablehttp_client
 
@@ -254,6 +288,12 @@ class McpManager:
 
             return sse_client(cfg.url or "", headers=dict(cfg.headers) or None)
         raise ValueError(f"unknown transport {cfg.transport!r}")
+
+    def _close_stderr(self, server_id: int) -> None:
+        f = self._stderr_files.pop(server_id, None)
+        if f is not None:
+            with contextlib.suppress(Exception):
+                f.close()
 
     # ------------------------------------------------------------------
     # the per-server task (runs on the loop thread)
@@ -294,13 +334,17 @@ class McpManager:
                 ready.cancel()
             raise
         except BaseException as exc:  # noqa: BLE001 - reported, never swallowed silently
-            message = _redact(_flatten_exception(exc), live.cfg.secret_values())
+            message = _redact(
+                _with_server_output(_flatten_exception(exc), _stderr_tail(self._stderr_files.get(live.cfg.id))),
+                live.cfg.secret_values(),
+            )
             if not ready.done():
                 ready.set_exception(RuntimeError(message))
             else:
                 lost_error = message
         finally:
             live.session = None
+            self._close_stderr(live.cfg.id)
             if self._live.get(live.cfg.id) is live:
                 del self._live[live.cfg.id]
             if lost_error is not None and not live.stop_requested:

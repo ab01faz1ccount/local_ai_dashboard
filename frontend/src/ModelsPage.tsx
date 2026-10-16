@@ -299,7 +299,7 @@ export function ModelsPage() {
                   )}
                 </td>
                 <td>
-                  <VerificationBadge status={m.verification_status} />
+                  <VerificationBadge status={m.verification_status} details={m.verification_details} showReason />
                   <button
                     className="verify-button"
                     disabled={!m.hf_repo_id || !m.hf_filename || m.verification_status === "pending" || !online}

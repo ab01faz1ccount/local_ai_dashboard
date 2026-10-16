@@ -749,3 +749,12 @@ a:focus-visible {
 .mode-swatch-light { background: #e9ecf1; }
 .mode-swatch-dark { background: #0b0f14; }
 :root[data-mode="light"] a { color: var(--accent-strong); }
+
+/* -- model verification: badge + one-line explanation -- */
+.verify-badge { display: inline-flex; flex-direction: column; gap: 2px; vertical-align: top; }
+.verify-reason { font-size: 11px; line-height: 1.4; color: var(--text-muted); max-width: 34ch; }
+
+/* -- model comparison: rows whose values differ between the models, and the shared-repository note -- */
+.compare-table tr.compare-differs td { background: var(--accent-soft); }
+.compare-table tr.compare-differs td:first-child { box-shadow: inset 3px 0 0 var(--accent); font-weight: 600; }
+.compare-table tr.compare-note-row td { font-size: 12px; color: var(--text-muted); font-style: italic; line-height: 1.5; }

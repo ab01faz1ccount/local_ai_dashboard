@@ -48,3 +48,21 @@ def test_bootstrap_then_both_routers_share_the_token_and_db():
         # ...and that same event is independently visible via the REST history.
         history_types = [e["event_type"] for e in client.get("/api/v1/events", headers=auth).json()]
         assert "runtime.started" in history_types
+
+
+def test_every_api_router_is_mounted_on_the_real_app():
+    """Catches the mistake that made Quick connect, auto-free and launch-plan
+    answer 404 on a real install: a router module existed but main.py didn't
+    include it, so none of its routes were served while everything else
+    worked. Compares every route each router declares with what the app
+    actually serves."""
+    from backend.api import connect, discovery, http, mcp, permissions, tools, ws
+
+    mounted = {r.path for r in app.routes}
+    for module in (http, discovery, connect, mcp, permissions, tools, ws):
+        for route in module.router.routes:
+            assert route.path in mounted, f"{module.__name__}: {route.path} is declared but not mounted in main.py"
+
+    # and the specific ones the UI depends on, by name
+    for path in ("/api/v1/connect/quick", "/api/v1/connect/models/{model_id}/launch-plan", "/api/v1/connect/runtimes/{runtime_id}/auto-free", "/api/v1/mcp/servers"):
+        assert path in mounted, path

@@ -21,6 +21,7 @@ import time
 args = sys.argv[1:]
 
 if "--exit-now" in args:
+    print("fixture: refusing to start (bad folder)", file=sys.stderr, flush=True)
     sys.exit(3)
 if "--hang" in args:
     time.sleep(3600)

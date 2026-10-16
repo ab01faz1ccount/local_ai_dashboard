@@ -9,6 +9,7 @@ import {
 } from "./api";
 import { FileBrowserDialog } from "./components/FileBrowserDialog";
 import { OnlineModelSearch } from "./components/OnlineModelSearch";
+import { modelOptionLabel } from "./verification-utils";
 import { deviceWarning } from "./inspect-utils";
 
 const STEP_COUNT = 3; // llama.cpp -> model -> runtime; the screen after it is just "done"
@@ -346,7 +347,7 @@ export function OnboardingWizard({
                 <option value="">— choose —</option>
                 {existingModels.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.name}
+                    {modelOptionLabel(m)}
                   </option>
                 ))}
               </select>

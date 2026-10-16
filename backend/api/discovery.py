@@ -40,6 +40,7 @@ from sqlalchemy.orm import Session
 
 from ..core import agent_discovery
 from ..core import agents as agent_backends
+from ..core import authenticity
 from ..core import connectivity, fs_browser
 from ..core import events
 from ..core import knowledge
@@ -299,7 +300,18 @@ def _register_finished_download(job: model_discovery.DownloadJob) -> dict:
             param_count=model_discovery.guess_param_count(job.repo_id),
         )
         storage_db.update_onboarding_state(db, first_model_added=True)
-        return {"registered": True, "model_id": model.id, "model_name": model.name}
+        # The downloader already compared the file against Hugging Face while it
+        # downloaded; record that, so the model list can say HOW it was checked
+        # without the user having to press Verify and hash a multi-GB file again.
+        check = authenticity.verification_from_download(job.files, job.evidence, job.primary_filename)
+        storage_db.update_model_verification(
+            db,
+            model.id,
+            verification_status=authenticity.column_status(check["status"]),
+            verification_checked_at=storage_db.utcnow_iso(),
+            verification_details_json=check,
+        )
+        return {"registered": True, "model_id": model.id, "model_name": model.name, "verification": check["status"]}
     finally:
         db.close()
 

@@ -562,7 +562,7 @@ def _run_verification(model_id: int) -> None:
         storage_db.update_model_verification(
             db,
             model_id,
-            verification_status=result["status"],
+            verification_status=authenticity.column_status(result["status"]),
             verification_checked_at=storage_db.utcnow_iso(),
             verification_details_json=result,
         )

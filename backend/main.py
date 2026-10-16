@@ -25,6 +25,8 @@ import os
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .api.connect import build_reaper
+from .api.connect import router as connect_router
 from .api.discovery import router as discovery_router
 from .api.http import require_token
 from .api.http import router as http_router
@@ -39,6 +41,9 @@ from .storage import db as storage_db
 from .storage.db import init_db
 
 app = FastAPI(title="Local AI Control Center", version="0.1.0")
+
+# Frees a runtime's memory when its auto-free policy says the work is over.
+idle_reaper = build_reaper()
 
 # CORSMiddleware handles the browser preflight (OPTIONS) automatically and
 # only attaches Access-Control-Allow-Origin for origins in the allowlist --
@@ -66,6 +71,7 @@ def _on_startup() -> None:
     # The server-side analytics history sampler (core/metrics.py) -- independent
     # of whether any browser has /ws/metrics open.
     metrics_recorder.start()
+    idle_reaper.start()
 
 
 @app.on_event("shutdown")
@@ -73,6 +79,7 @@ def _on_shutdown() -> None:
     # Terminates any stdio MCP server child processes instead of orphaning them.
     mcp_manager.shutdown()
     metrics_recorder.stop()
+    idle_reaper.stop()
 
 
 @app.get("/api/v1/auth/bootstrap-token")
@@ -106,6 +113,7 @@ def bootstrap_token() -> dict:
 # either.
 app.include_router(http_router, dependencies=[Depends(require_token)])
 app.include_router(discovery_router)
+app.include_router(connect_router)
 app.include_router(mcp_router)
 app.include_router(permissions_router)
 app.include_router(tools_router)

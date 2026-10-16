@@ -7,6 +7,7 @@ import {
   type ModelSummary,
   type QuickConnectResult,
 } from "../api";
+import { modelOptionLabel } from "../verification-utils";
 import { quickConnectMessage } from "../connect-utils";
 import { FitBadge } from "./FitBadge";
 
@@ -82,7 +83,7 @@ export function QuickConnectPanel({ onConnected }: { onConnected?: () => void })
             <option value="">— pick a model —</option>
             {models.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.name}
+                {modelOptionLabel(m)}
               </option>
             ))}
           </select>

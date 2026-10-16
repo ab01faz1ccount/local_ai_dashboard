@@ -357,6 +357,9 @@ class DownloadJob:
     error: Optional[str] = None
     local_path: Optional[str] = None
     result: dict = field(default_factory=dict)
+    # path -> how that file was checked: "hash" (SHA-256 matched Hugging Face's),
+    # "size" (only the byte count matched), "none" (nothing to compare against).
+    evidence: dict = field(default_factory=dict)
     started_at: float = field(default_factory=time.time)
     finished_at: Optional[float] = None
     cancel_event: threading.Event = field(default_factory=threading.Event)
@@ -489,11 +492,37 @@ class DownloadManager:
                 f"فضای دیسک کافی نیست: حدود {needed / 1e9:.1f} GB لازمه ولی فقط {free / 1e9:.1f} GB آزاده."
             )
 
+    @staticmethod
+    def _hash_file(path: Path, job: DownloadJob) -> str:
+        hasher = hashlib.sha256()
+        with open(path, "rb") as f:
+            while True:
+                if job.cancel_event.is_set():
+                    raise _Cancelled()
+                block = f.read(CHUNK_BYTES)
+                if not block:
+                    break
+                hasher.update(block)
+        return hasher.hexdigest()
+
     def _download_file(self, job: DownloadJob, rf: RepoFile, final: Path) -> None:
-        # Already fully downloaded earlier (right size) -> count it and move on.
+        # Already on disk with the right size. Size alone proves nothing: a corrupt or
+        # swapped file of the same length would be accepted. When Hugging Face publishes
+        # a hash, check it; a file that doesn't match is deleted and fetched again.
         if final.exists() and rf.size is not None and final.stat().st_size == rf.size:
-            job.downloaded_bytes += rf.size
-            return
+            if rf.sha256:
+                job.note = "چک کردن فایل موجود…"
+                digest = self._hash_file(final, job)
+                job.note = None
+                if digest.lower() == rf.sha256.lower():
+                    job.downloaded_bytes += rf.size
+                    job.evidence[rf.path] = "hash"
+                    return
+                final.unlink()  # same size, different content: never keep it
+            else:
+                job.downloaded_bytes += rf.size
+                job.evidence[rf.path] = "size"
+                return
 
         part = final.with_name(final.name + ".part")
         offset = part.stat().st_size if part.exists() else 0
@@ -564,6 +593,7 @@ class DownloadManager:
                 "هش SHA256 فایل با هش رسمی Hugging Face نمی‌خونه — فایل پاک شد. دوباره امتحان کن.", "error"
             )
         os.replace(part, final)
+        job.evidence[rf.path] = "hash" if hasher is not None else ("size" if rf.size is not None else "none")
 
 
 download_manager = DownloadManager()

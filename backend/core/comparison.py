@@ -29,7 +29,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from . import hardware_fit
+from . import gguf_meta, hardware_fit
 from ..storage import db as storage_db
 from ..storage.db import MLModel
 
@@ -135,15 +135,30 @@ def fetch_benchmark_data(hf_repo_id: str) -> Optional[dict]:
     }
 
 
-def _metadata_dict(model: MLModel) -> dict:
+def _metadata_dict(model: MLModel, file_facts: Optional[dict] = None) -> dict:
+    """The catalog row, with the three fields that used to show "—" filled from the
+    file itself when it can be read. What the file says wins over what a name guessed:
+    a repo called "...-9B-GGUF" gives "9B", the header gives the exact count.
+    `sources` says where each of the three came from."""
+    facts = file_facts or {}
+    sources = {}
+
+    def pick(field: str, from_file, stored):
+        if from_file not in (None, ""):
+            sources[field] = "file"
+            return from_file
+        sources[field] = "catalog" if stored not in (None, "") else None
+        return stored
+
     return {
         "id": model.id,
         "name": model.name,
         "file_size_bytes": model.file_size_bytes,
-        "quantization": model.quantization,
-        "param_count": model.param_count,
-        "context_length": model.context_length,
+        "quantization": pick("quantization", facts.get("file_type"), model.quantization),
+        "param_count": pick("param_count", facts.get("parameters_label"), model.param_count),
+        "context_length": pick("context_length", facts.get("context_length"), model.context_length),
         "hf_repo_id": model.hf_repo_id,
+        "sources": sources,
     }
 
 
@@ -201,8 +216,13 @@ def compare_models(db: Session, model_ids: list[int], hardware: Optional[dict] =
         if model.hf_repo_id and internet_available:
             benchmarks = fetch_benchmark_data(model.hf_repo_id)
         impact = estimate_system_impact(model)
+        # Exact, per-file facts from the GGUF header: the part of the comparison that really
+        # differs between a Q4 and a Q6 of the same model (the web profile below is the same).
+        file_facts, file_error = gguf_meta.safe_summary(model.file_path)
         row = {
-            "metadata": _metadata_dict(model),
+            "metadata": _metadata_dict(model, file_facts),
+            "gguf": file_facts,
+            "gguf_error": file_error,
             "estimated_system_impact": impact,
             "hardware_fit": hardware_fit.assess_from_snapshot(impact["estimated_total_mb"], hardware),
             "real_world_performance": storage_db.get_model_performance_stats(db, model.id),

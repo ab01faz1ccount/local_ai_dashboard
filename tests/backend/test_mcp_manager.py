@@ -286,6 +286,8 @@ def test_server_that_exits_immediately_is_a_failed_connect_not_an_exception(db, 
     t0 = time.time()
     status = mgr.connect(db, row)
     assert status.state == ERROR and status.error
+    # the card must say WHY, not just "Connection closed": the server's own stderr
+    assert "refusing to start (bad folder)" in status.error
     assert time.time() - t0 < 10  # fails fast, doesn't wait out the connect timeout
     assert row.status == ERROR and row.last_error == status.error and row.tools_count == 0
     assert not mgr.is_connected(row.id)
@@ -551,3 +553,21 @@ def test_annotations_reach_cached_tools_dicts(db, mgr):
     assert tools["echo"]["annotations"]["readOnlyHint"] is True
     assert tools["delete_file"]["annotations"]["destructiveHint"] is True
     assert "annotations" not in tools["add"]  # no hints declared -> key omitted entirely
+
+
+def test_stderr_tail_keeps_last_lines_on_one_line_and_never_raises():
+    import io
+    from backend.core.mcp import manager as m
+
+    assert m._stderr_tail(None) == ""
+    f = io.StringIO("a\n\nb\nc\nd\ne\n")
+    assert m._stderr_tail(f) == "b | c | d | e"  # last 4 non-empty lines
+    assert len(m._stderr_tail(io.StringIO("x" * 5000))) == m.STDERR_TAIL_CHARS
+
+    class Broken:
+        def flush(self):
+            raise OSError("closed")
+
+    assert m._stderr_tail(Broken()) == ""
+    assert m._with_server_output("Connection closed", "boom") == "Connection closed -- server said: boom"
+    assert m._with_server_output("Connection closed", "") == "Connection closed"

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ModelSummary, RuntimeMetrics, RuntimeSummary } from "../api";
 import { formatTokensPerSec } from "../format";
+import { modelOptionLabel } from "../verification-utils";
 import { StatusLed } from "./StatusLed";
 import { FileBrowserDialog } from "./FileBrowserDialog";
 import { AutoFreeControl } from "./AutoFreeControl";
@@ -150,7 +151,7 @@ export function RuntimeCard({ runtime, metrics, models, onStart, onStop, onResta
               <option value="">— none —</option>
               {models.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.name}
+                  {modelOptionLabel(m)}
                 </option>
               ))}
             </select>

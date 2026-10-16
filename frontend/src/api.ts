@@ -70,6 +70,30 @@ export interface ModelUpdatePayload {
   hf_filename?: string;
 }
 
+/** What a GGUF file says about itself (backend/core/gguf_meta.py `summarize`). Exact for that file. */
+export interface GgufFacts {
+  architecture: string | null;
+  name: string | null;
+  size_label: string | null;
+  finetune: string | null;
+  parameters: number | null;
+  parameters_label: string | null;
+  file_type: string | null;
+  tensor_mix: { type: string; share: number; tensors: number }[];
+  bits_per_weight: number | null;
+  layers: number | null;
+  embedding_length: number | null;
+  attention_heads: number | null;
+  kv_heads: number | null;
+  context_length: number | null;
+  experts: number | null;
+  vocab_size: number | null;
+  has_chat_template: boolean;
+  kv_cache: { bytes_per_token: number; layers_with_cache: number; kv_heads: number; head_dim: number; note: string | null } | null;
+  parts: number;
+  tensor_count: number | null;
+}
+
 export interface ModelComparisonRow {
   metadata: {
     id: number;
@@ -79,7 +103,12 @@ export interface ModelComparisonRow {
     param_count: string | null;
     context_length: number | null;
     hf_repo_id: string | null;
+    /** Where quantization / param_count / context_length came from: "file", "catalog" or null. */
+    sources?: Record<string, string | null>;
   };
+  /** Read from the model file's own header; null when it couldn't be read (see gguf_error). */
+  gguf?: GgufFacts | null;
+  gguf_error?: string | null;
   estimated_system_impact: {
     estimated_base_mb: number;
     estimated_kv_cache_mb: number;
@@ -570,6 +599,12 @@ export interface AgentRepoResult {
   archived: boolean;
   owner_type: string | null;
   topics: string[];
+  /** Ranking, from the backend. Optional so older/minimal payloads still render. */
+  score?: number;
+  why?: string[];
+  known?: boolean;
+  name_match?: "exact" | "contains" | "tokens" | "none";
+  score_parts?: { not_an_agent_penalty?: number; [part: string]: number | undefined };
 }
 
 export interface InstallCommandCandidate {

@@ -147,3 +147,57 @@ def verify_model_authenticity(model: MLModel) -> dict:
         "local_size_bytes": model.file_size_bytes,
         "remote_size_bytes": remote_size,
     }
+
+
+# ---------------------------------------------------------------------
+# What gets stored, and the check that happens during a download
+# ---------------------------------------------------------------------
+
+# The `models.verification_status` column has a CHECK constraint (db.py) that
+# predates the size-only result, and SQLite can't alter a CHECK in place. So the
+# column keeps the coarse value and the exact one lives in the details JSON
+# (`details["status"]`), which is what the UI reads.
+_COLUMN_STATUS = {STATUS_METADATA_ONLY: STATUS_NO_HASH_AVAILABLE}
+
+
+def column_status(status: str) -> str:
+    """The value to store in `models.verification_status` for a result status."""
+    return _COLUMN_STATUS.get(status, status)
+
+
+def verification_from_download(files: list, evidence: dict, primary_filename: str) -> dict:
+    """The result record for a model that was just downloaded.
+
+    `files` are the downloaded `RepoFile`s (path, size, sha256) and `evidence`
+    maps each path to how the downloader checked it: "hash", "size" or "none".
+    The model is only as strong as its WEAKEST file: a split model with one
+    unhashed part is not "verified by hash".
+    """
+    levels = [evidence.get(f.path, "none") for f in files]
+    primary = next((f for f in files if f.path == primary_filename), files[0] if files else None)
+    base = {
+        "method": "download",
+        "local_sha256": None,
+        "remote_sha256": getattr(primary, "sha256", None),
+        "local_size_bytes": sum(f.size or 0 for f in files) or None,
+        "remote_size_bytes": sum(f.size or 0 for f in files) or None,
+        "files_checked": len(files),
+    }
+    if files and all(lv == "hash" for lv in levels):
+        base["status"] = STATUS_VERIFIED
+        base["local_sha256"] = base["remote_sha256"]  # equal by construction: a mismatch deletes the file
+        base["reason"] = (
+            "SHA-256 of the downloaded file matched the hash Hugging Face publishes for it"
+            if len(files) == 1
+            else f"SHA-256 of all {len(files)} parts matched the hashes Hugging Face publishes"
+        )
+    elif files and all(lv in ("hash", "size") for lv in levels):
+        base["status"] = STATUS_METADATA_ONLY
+        base["reason"] = (
+            "Hugging Face published no hash for at least one file, so only the file size was compared. "
+            "That catches a truncated download but not a swapped file."
+        )
+    else:
+        base["status"] = STATUS_NO_HASH_AVAILABLE
+        base["reason"] = "Hugging Face published neither a hash nor a size for this file, so nothing could be compared."
+    return base

@@ -1,4 +1,5 @@
 import type { ModelComparisonRow } from "../api";
+import { bitsText, formatContext, headsText, kvCacheText, sharedWebRepo, tensorMixText, valuesDiffer } from "../compare-utils";
 import { factKeysInOrder, findFact, safeSourceUrl } from "../knowledge-utils";
 import { FactCell } from "./FactCell";
 import { FitBadge } from "./FitBadge";
@@ -25,6 +26,19 @@ export function ModelCompareTable({
 }) {
   if (rows.length === 0) return null;
   const webRows = factKeysInOrder(rows.map((r) => r.knowledge?.profile));
+  const sharedRepo = sharedWebRepo(rows);
+  const anyFile = rows.some((r) => r.gguf);
+
+  /** One comparison row. Rows whose shown values differ between the models are highlighted,
+   * so what actually distinguishes the files stands out from what is merely the same. */
+  const line = (label: string, cells: string[], title?: string) => (
+    <tr className={valuesDiffer(cells) ? "compare-differs" : undefined} title={title}>
+      <td>{label}</td>
+      {rows.map((r, i) => (
+        <td key={r.metadata.id}>{cells[i]}</td>
+      ))}
+    </tr>
+  );
 
   return (
     <div className="compare-table-wrap">
@@ -47,24 +61,49 @@ export function ModelCompareTable({
               <td key={r.metadata.id}>{formatMb(r.metadata.file_size_bytes / (1024 * 1024))}</td>
             ))}
           </tr>
-          <tr>
-            <td>Quantization</td>
-            {rows.map((r) => (
-              <td key={r.metadata.id}>{r.metadata.quantization ?? "—"}</td>
-            ))}
+          {line("Quantization", rows.map((r) => r.metadata.quantization ?? "—"), "Read from the file when possible")}
+          {line("Params", rows.map((r) => r.metadata.param_count ?? "—"), "Read from the file when possible, otherwise guessed from the name")}
+          {line("Context length", rows.map((r) => (r.metadata.context_length != null ? formatContext(r.metadata.context_length) : "—")), "The most the model was trained for")}
+
+          <tr className="compare-section-row">
+            <td colSpan={rows.length + 1}>
+              Read from the file itself — exact for each file
+              {!anyFile && " (the files could not be read)"}
+            </td>
           </tr>
-          <tr>
-            <td>Params</td>
-            {rows.map((r) => (
-              <td key={r.metadata.id}>{r.metadata.param_count ?? "—"}</td>
-            ))}
-          </tr>
-          <tr>
-            <td>Context length</td>
-            {rows.map((r) => (
-              <td key={r.metadata.id}>{r.metadata.context_length ?? "—"}</td>
-            ))}
-          </tr>
+          {anyFile ? (
+            <>
+              {line("Architecture", rows.map((r) => r.gguf?.architecture ?? "—"))}
+              {line("Parameters (exact)", rows.map((r) => r.gguf?.parameters_label ?? "—"), "Counted from the tensors in the file")}
+              {line("Weight types", rows.map((r) => tensorMixText(r.gguf?.tensor_mix)), "Which quantization types the weights really use. A Q4_K_M file is mostly Q4_K with some Q6_K")}
+              {line("Bits per weight", rows.map((r) => bitsText(r.gguf?.bits_per_weight)), "File size divided by parameters: the real cost of the quantization")}
+              {line("Layers", rows.map((r) => (r.gguf?.layers != null ? String(r.gguf.layers) : "—")))}
+              {line("Embedding size", rows.map((r) => (r.gguf?.embedding_length != null ? String(r.gguf.embedding_length) : "—")))}
+              {line("Attention heads", rows.map((r) => headsText(r.gguf)))}
+              {line("Vocabulary", rows.map((r) => (r.gguf?.vocab_size != null ? r.gguf.vocab_size.toLocaleString("en-US") : "—")))}
+              {line("Chat template", rows.map((r) => (r.gguf ? (r.gguf.has_chat_template ? "built in" : "none") : "—")))}
+              {line(
+                "KV cache per 1k tokens",
+                rows.map((r) => kvCacheText(r.gguf?.kv_cache, 1000)),
+                "Estimate at f16, from the layer and head counts. Models with mixed layer kinds only cache some layers."
+              )}
+              {rows.some((r) => r.gguf_error) && (
+                <tr>
+                  <td>Could not read</td>
+                  {rows.map((r) => (
+                    <td key={r.metadata.id}>{r.gguf_error ? <span className="fact-missing">{r.gguf_error}</span> : ""}</td>
+                  ))}
+                </tr>
+              )}
+            </>
+          ) : (
+            <tr>
+              <td>Why</td>
+              <td colSpan={rows.length}>
+                <span className="fact-missing">{rows.find((r) => r.gguf_error)?.gguf_error ?? "No file details are available."}</span>
+              </td>
+            </tr>
+          )}
 
           <tr className="compare-section-row">
             <td colSpan={rows.length + 1}>Estimated system impact</td>
@@ -115,6 +154,14 @@ export function ModelCompareTable({
               From the web — every fact links to its source{!internetAvailable && " (needs an internet connection)"}
             </td>
           </tr>
+          {sharedRepo && (
+            <tr className="compare-note-row">
+              <td colSpan={rows.length + 1}>
+                These models come from the same repository ({sharedRepo}), so the web facts below are identical by nature: a model card describes the whole
+                repository, not one quantization. What tells these files apart is in the rows above.
+              </td>
+            </tr>
+          )}
           <tr>
             <td>Looked up as</td>
             {rows.map((r) => {
