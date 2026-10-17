@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from pathlib import Path
 from typing import Optional
 
 from . import paths
@@ -133,6 +134,19 @@ class HermesAdapter(AgentAdapter):
                 raise RuntimeError(f"`{' '.join(cmd)}` failed: {(result.stderr or result.stdout).strip()}")
             ran.append(" ".join(cmd))
         return ran
+
+    def mcp_store(self):
+        from . import mcp_sync
+
+        # ~/.hermes/config.yaml is the documented location.
+        return mcp_sync.McpStore(Path.home() / ".hermes" / "config.yaml", mcp_sync.HERMES_PROFILE)
+
+    def mcp_probe_command(self, agent_key: str):
+        exe = self._executable()
+        return [exe, "mcp", "test", agent_key] if exe else None
+
+    def mcp_probe_is_live(self) -> bool:
+        return True  # `hermes mcp test` connects and lists the tools
 
     def build_launch_command(self, resume_session_id: Optional[str] = None) -> list[str]:
         exe = self._executable()

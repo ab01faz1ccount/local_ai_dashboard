@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, apiErrorMessage, type AgentSummary, type McpServer } from "../api";
+import { AgentMcpSync } from "./AgentMcpSync";
 
 interface Props {
   agent: AgentSummary;
@@ -60,6 +61,9 @@ export function AgentToolsPanel({ agent, onUpdated }: Props) {
   if (loading) return null;
   if (servers.length === 0) return null;
 
+  const attachedKey = Array.from(attached).sort().join(",");
+  const showSync = attached.size > 0 && agent.agent_backend !== "generic";
+
   return (
     <div className="agent-tools-panel">
       <span className="muted">Tools for {agent.name}:</span>
@@ -80,6 +84,7 @@ export function AgentToolsPanel({ agent, onUpdated }: Props) {
           {error}
         </span>
       )}
+      {showSync && <AgentMcpSync agent={agent} attachedKey={attachedKey} />}
     </div>
   );
 }

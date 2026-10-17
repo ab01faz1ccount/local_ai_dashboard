@@ -1,0 +1,2263 @@
+{
+ "about": "Hand-written candidate pools from general knowledge of the ecosystem; star/download numbers are approximate and NOT live data. Re-capture real pools with scripts/capture_search_case.py.",
+ "cases": [
+  {
+   "id": "qwen35-9b-q6km",
+   "kind": "model",
+   "query": "qwen3.5-9B-Q6KM",
+   "followers": {
+    "unsloth": 12000,
+    "bartowski": 4000,
+    "lmstudio-community": 1500,
+    "Qwen": 90000,
+    "google": 60000,
+    "mistralai": 20000,
+    "microsoft": 50000,
+    "TheBloke": 9000,
+    "meta-llama": 70000,
+    "deepseek-ai": 80000
+   },
+   "candidates": [
+    {
+     "repo_id": "unsloth/Qwen3.5-9B-GGUF",
+     "downloads": 600000,
+     "likes": 180,
+     "gated": false
+    },
+    {
+     "repo_id": "bartowski/Qwen_Qwen3.5-9B-GGUF",
+     "downloads": 150000,
+     "likes": 60,
+     "gated": false
+    },
+    {
+     "repo_id": "lmstudio-community/Qwen3.5-9B-GGUF",
+     "downloads": 200000,
+     "likes": 40,
+     "gated": false
+    },
+    {
+     "repo_id": "mradermacher/Qwen3.5-9B-i1-GGUF",
+     "downloads": 80000,
+     "likes": 20,
+     "gated": false
+    },
+    {
+     "repo_id": "HauhauCS/Qwen3.5-9B-Uncensored-Aggressive-GGUF",
+     "downloads": 90000,
+     "likes": 400,
+     "gated": false
+    },
+    {
+     "repo_id": "someone/Qwen3.5-9B-Heretic-Q6_K-GGUF",
+     "downloads": 3000,
+     "likes": 10,
+     "gated": false
+    },
+    {
+     "repo_id": "unsloth/Qwen3.5-27B-GGUF",
+     "downloads": 900000,
+     "likes": 300,
+     "gated": false
+    },
+    {
+     "repo_id": "unsloth/Qwen3.5-35B-A3B-GGUF",
+     "downloads": 1000000,
+     "likes": 400,
+     "gated": false
+    },
+    {
+     "repo_id": "bartowski/Qwen_Qwen3.5-19B-GGUF",
+     "downloads": 20000,
+     "likes": 10,
+     "gated": false
+    }
+   ],
+   "good": [
+    "unsloth/Qwen3.5-9B-GGUF",
+    "bartowski/Qwen_Qwen3.5-9B-GGUF",
+    "lmstudio-community/Qwen3.5-9B-GGUF"
+   ],
+   "must_beat": [
+    [
+     "unsloth/Qwen3.5-9B-GGUF",
+     "HauhauCS/Qwen3.5-9B-Uncensored-Aggressive-GGUF"
+    ],
+    [
+     "unsloth/Qwen3.5-9B-GGUF",
+     "unsloth/Qwen3.5-27B-GGUF"
+    ],
+    [
+     "bartowski/Qwen_Qwen3.5-9B-GGUF",
+     "unsloth/Qwen3.5-35B-A3B-GGUF"
+    ],
+    [
+     "lmstudio-community/Qwen3.5-9B-GGUF",
+     "bartowski/Qwen_Qwen3.5-19B-GGUF"
+    ]
+   ],
+   "note": "the user's own query: plain conversions of the 9B first; other sizes and modified versions below"
+  },
+  {
+   "id": "qwen35-9b-typo",
+   "kind": "model",
+   "query": "qwwn3.5 9b",
+   "followers": {
+    "unsloth": 12000,
+    "bartowski": 4000,
+    "lmstudio-community": 1500,
+    "Qwen": 90000,
+    "google": 60000,
+    "mistralai": 20000,
+    "microsoft": 50000,
+    "TheBloke": 9000,
+    "meta-llama": 70000,
+    "deepseek-ai": 80000
+   },
+   "candidates": [
+    {
+     "repo_id": "unsloth/Qwen3.5-9B-GGUF",
+     "downloads": 600000,
+     "likes": 180,
+     "gated": false
+    },
+    {
+     "repo_id": "bartowski/Qwen_Qwen3.5-9B-GGUF",
+     "downloads": 150000,
+     "likes": 60,
+     "gated": false
+    },
+    {
+     "repo_id": "lmstudio-community/Qwen3.5-9B-GGUF",
+     "downloads": 200000,
+     "likes": 40,
+     "gated": false
+    },
+    {
+     "repo_id": "mradermacher/Qwen3.5-9B-i1-GGUF",
+     "downloads": 80000,
+     "likes": 20,
+     "gated": false
+    },
+    {
+     "repo_id": "HauhauCS/Qwen3.5-9B-Uncensored-Aggressive-GGUF",
+     "downloads": 90000,
+     "likes": 400,
+     "gated": false
+    },
+    {
+     "repo_id": "someone/Qwen3.5-9B-Heretic-Q6_K-GGUF",
+     "downloads": 3000,
+     "likes": 10,
+     "gated": false
+    },
+    {
+     "repo_id": "unsloth/Qwen3.5-27B-GGUF",
+     "downloads": 900000,
+     "likes": 300,
+     "gated": false
+    },
+    {
+     "repo_id": "unsloth/Qwen3.5-35B-A3B-GGUF",
+     "downloads": 1000000,
+     "likes": 400,
+     "gated": false
+    },
+    {
+     "repo_id": "bartowski/Qwen_Qwen3.5-19B-GGUF",
+     "downloads": 20000,
+     "likes": 10,
+     "gated": false
+    }
+   ],
+   "good": [
+    "unsloth/Qwen3.5-9B-GGUF",
+    "bartowski/Qwen_Qwen3.5-9B-GGUF",
+    "lmstudio-community/Qwen3.5-9B-GGUF"
+   ],
+   "must_beat": [
+    [
+     "unsloth/Qwen3.5-9B-GGUF",
+     "HauhauCS/Qwen3.5-9B-Uncensored-Aggressive-GGUF"
+    ],
+    [
+     "unsloth/Qwen3.5-9B-GGUF",
+     "unsloth/Qwen3.5-27B-GGUF"
+    ],
+    [
+     "bartowski/Qwen_Qwen3.5-9B-GGUF",
+     "unsloth/Qwen3.5-35B-A3B-GGUF"
+    ],
+    [
+     "lmstudio-community/Qwen3.5-9B-GGUF",
+     "bartowski/Qwen_Qwen3.5-19B-GGUF"
+    ]
+   ],
+   "note": "family typo repaired before scoring",
+   "typo_fix": true
+  },
+  {
+   "id": "qwen3-4b-not-14b",
+   "kind": "model",
+   "query": "qwen3 4b",
+   "followers": {
+    "unsloth": 12000,
+    "bartowski": 4000,
+    "lmstudio-community": 1500,
+    "Qwen": 90000,
+    "google": 60000,
+    "mistralai": 20000,
+    "microsoft": 50000,
+    "TheBloke": 9000,
+    "meta-llama": 70000,
+    "deepseek-ai": 80000
+   },
+   "candidates": [
+    {
+     "repo_id": "Qwen/Qwen3-4B-GGUF",
+     "downloads": 400000,
+     "likes": 150,
+     "gated": false
+    },
+    {
+     "repo_id": "unsloth/Qwen3-4B-GGUF",
+     "downloads": 900000,
+     "likes": 120,
+     "gated": false
+    },
+    {
+     "repo_id": "unsloth/Qwen3-14B-GGUF",
+     "downloads": 1200000,
+     "likes": 200,
+     "gated": false
+    },
+    {
+     "repo_id": "Qwen/Qwen3-14B-GGUF",
+     "downloads": 700000,
+     "likes": 180,
+     "gated": false
+    },
+    {
+     "repo_id": "bartowski/Qwen_Qwen3-14B-GGUF",
+     "downloads": 50000,
+     "likes": 40,
+     "gated": false
+    },
+    {
+     "repo_id": "unsloth/Qwen3-4B-Instruct-2507-GGUF",
+     "downloads": 800000,
+     "likes": 90,
+     "gated": false
+    },
+    {
+     "repo_id": "Qwen/Qwen3-30B-A3B-GGUF",
+     "downloads": 500000,
+     "likes": 300,
+     "gated": false
+    },
+    {
+     "repo_id": "bartowski/Qwen_Qwen3-24B-GGUF",
+     "downloads": 10000,
+     "likes": 5,
+     "gated": false
+    }
+   ],
+   "good": [
+    "Qwen/Qwen3-4B-GGUF",
+    "unsloth/Qwen3-4B-GGUF"
+   ],
+   "must_beat": [
+    [
+     "Qwen/Qwen3-4B-GGUF",
+     "Qwen/Qwen3-14B-GGUF"
+    ],
+    [
+     "unsloth/Qwen3-4B-GGUF",
+     "unsloth/Qwen3-14B-GGUF"
+    ],
+    [
+     "unsloth/Qwen3-4B-GGUF",
+     "bartowski/Qwen_Qwen3-24B-GGUF"
+    ]
+   ],
+   "note": "a size is a word of its own: 4b is not inside 14b / 24b"
+  },
+  {
+   "id": "llama31-8b-instruct",
+   "kind": "model",
+   "query": "llama 3.1 8b instruct",
+   "followers": {
+    "unsloth": 12000,
+    "bartowski": 4000,
+    "lmstudio-community": 1500,
+    "Qwen": 90000,
+    "google": 60000,
+    "mistralai": 20000,
+    "microsoft": 50000,
+    "TheBloke": 9000,
+    "meta-llama": 70000,
+    "deepseek-ai": 80000
+   },
+   "candidates": [
+    {
+     "repo_id": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
+     "downloads": 500000,
+     "likes": 300,
+     "gated": false
+    },
+    {
+     "repo_id": "unsloth/Llama-3.1-8B-Instruct-GGUF",
+     "downloads": 300000,
+     "likes": 50,
+     "gated": false
+    },
+    {
+     "repo_id": "lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF",
+     "downloads": 400000,
+     "likes": 150,
+     "gated": false
+    },
+    {
+     "repo_id": "QuantFactory/Meta-Llama-3.1-8B-Instruct-GGUF",
+     "downloads": 100000,
+     "likes": 60,
+     "gated": false
+    },
+    {
+     "repo_id": "mlabonne/Meta-Llama-3.1-8B-Instruct-abliterated-GGUF",
+     "downloads": 150000,
+     "likes": 200,
+     "gated": false
+    },
+    {
+     "repo_id": "Orenguteng/Llama-3.1-8B-Lexi-Uncensored-V2-GGUF",
+     "downloads": 250000,
+     "likes": 150,
+     "gated": false
+    },
+    {
+     "repo_id": "bartowski/Meta-Llama-3.1-70B-Instruct-GGUF",
+     "downloads": 300000,
+     "likes": 150,
+     "gated": false
+    },
+    {
+     "repo_id": "bartowski/Llama-3.2-3B-Instruct-GGUF",
+     "downloads": 900000,
+     "likes": 200,
+     "gated": false
+    }
+   ],
+   "good": [
+    "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
+    "unsloth/Llama-3.1-8B-Instruct-GGUF",
+    "lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF"
+   ],
+   "must_beat": [
+    [
+     "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
+     "mlabonne/Meta-Llama-3.1-8B-Instruct-abliterated-GGUF"
+    ],
+    [
+     "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
+     "bartowski/Meta-Llama-3.1-70B-Instruct-GGUF"
+    ],
+    [
+     "lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF",
+     "bartowski/Llama-3.2-3B-Instruct-GGUF"
+    ]
+   ]
+  },
+  {
+   "id": "gemma3-27b",
+   "kind": "model",
+   "query": "gemma 3 27b",
+   "followers": {
+    "unsloth": 12000,
+    "bartowski": 4000,
+    "lmstudio-community": 1500,
+    "Qwen": 90000,
+    "google": 60000,
+    "mistralai": 20000,
+    "microsoft": 50000,
+    "TheBloke": 9000,
+    "meta-llama": 70000,
+    "deepseek-ai": 80000
+   },
+   "candidates": [
+    {
+     "repo_id": "google/gemma-3-27b-it-qat-q4_0-gguf",
+     "downloads": 30000,
+     "likes": 300,
+     "gated": true
+    },
+    {
+     "repo_id": "unsloth/gemma-3-27b-it-GGUF",
+     "downloads": 500000,
+     "likes": 120,
+     "gated": false
+    },
+    {
+     "repo_id": "bartowski/google_gemma-3-27b-it-GGUF",
+     "downloads": 150000,
+     "likes": 50,
+     "gated": false
+    },
+    {
+     "repo_id": "ggml-org/gemma-3-27b-it-GGUF",
+     "downloads": 80000,
+     "likes": 40,
+     "gated": false
+    },
+    {
+     "repo_id": "lmstudio-community/gemma-3-27b-it-GGUF",
+     "downloads": 120000,
+     "likes": 30,
+     "gated": false
+    },
+    {
+     "repo_id": "unsloth/gemma-3-12b-it-GGUF",
+     "downloads": 900000,
+     "likes": 150,
+     "gated": false
+    },
+    {
+     "repo_id": "bartowski/gemma-3-1b-it-GGUF",
+     "downloads": 100000,
+     "likes": 30,
+     "gated": false
+    },
+    {
+     "repo_id": "unsloth/gemma-3n-E4B-it-GGUF",
+     "downloads": 700000,
+     "likes": 100,
+     "gated": false
+    }
+   ],
+   "good": [
+    "unsloth/gemma-3-27b-it-GGUF",
+    "bartowski/google_gemma-3-27b-it-GGUF",
+    "ggml-org/gemma-3-27b-it-GGUF",
+    "lmstudio-community/gemma-3-27b-it-GGUF",
+    "google/gemma-3-27b-it-qat-q4_0-gguf"
+   ],
+   "must_beat": [
+    [
+     "unsloth/gemma-3-27b-it-GGUF",
+     "unsloth/gemma-3-12b-it-GGUF"
+    ],
+    [
+     "lmstudio-community/gemma-3-27b-it-GGUF",
+     "unsloth/gemma-3n-E4B-it-GGUF"
+    ],
+    [
+     "bartowski/google_gemma-3-27b-it-GGUF",
+     "bartowski/gemma-3-1b-it-GGUF"
+    ]
+   ]
+  },
+  {
+   "id": "qwen-coder-7b",
+   "kind": "model",
+   "query": "qwen coder 7b",
+   "purpose": "coding",
+   "followers": {
+    "unsloth": 12000,
+    "bartowski": 4000,
+    "lmstudio-community": 1500,
+    "Qwen": 90000,
+    "google": 60000,
+    "mistralai": 20000,
+    "microsoft": 50000,
+    "TheBloke": 9000,
+    "meta-llama": 70000,
+    "deepseek-ai": 80000
+   },
+   "candidates": [
+    {
+     "repo_id": "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
+     "downloads": 300000,
+     "likes": 100,
+     "gated": false
+    },
+    {
+     "repo_id": "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF",
+     "downloads": 200000,
+     "likes": 60,
+     "gated": false
+    },
+    {
+     "repo_id": "Qwen/Qwen2.5-7B-Instruct-GGUF",
+     "downloads": 600000,
+     "likes": 150,
+     "gated": false
+    },
+    {
+     "repo_id": "unsloth/Qwen2.5-Coder-32B-Instruct-GGUF",
+     "downloads": 700000,
+     "likes": 150,
+     "gated": false
+    },
+    {
+     "repo_id": "unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF",
+     "downloads": 300000,
+     "likes": 30,
+     "gated": false
+    },
+    {
+     "repo_id": "bartowski/Qwen2.5-7B-Instruct-GGUF",
+     "downloads": 400000,
+     "likes": 70,
+     "gated": false
+    }
+   ],
+   "good": [
+    "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
+    "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF"
+   ],
+   "must_beat": [
+    [
+     "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
+     "Qwen/Qwen2.5-7B-Instruct-GGUF"
+    ],
+    [
+     "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF",
+     "unsloth/Qwen2.5-Coder-32B-Instruct-GGUF"
+    ]
+   ]
+  },
+  {
+   "id": "mistral-7b",
+   "kind": "model",
+   "query": "mistral 7b",
+   "followers": {
+    "unsloth": 12000,
+    "bartowski": 4000,
+    "lmstudio-community": 1500,
+    "Qwen": 90000,
+    "google": 60000,
+    "mistralai": 20000,
+    "microsoft": 50000,
+    "TheBloke": 9000,
+    "meta-llama": 70000,
+    "deepseek-ai": 80000
+   },
+   "candidates": [
+    {
+     "repo_id": "TheBloke/Mistral-7B-Instruct-v0.2-GGUF",
+     "downloads": 1000000,
+     "likes": 500,
+     "gated": false
+    },
+    {
+     "repo_id": "bartowski/Mistral-7B-Instruct-v0.3-GGUF",
+     "downloads": 300000,
+     "likes": 60,
+     "gated": false
+    },
+    {
+     "repo_id": "mistralai/Mistral-7B-Instruct-v0.3-GGUF",
+     "downloads": 150000,
+     "likes": 80,
+     "gated": false
+    },
+    {
+     "repo_id": "QuantFactory/Mistral-7B-v0.3-GGUF",
+     "downloads": 30000,
+     "likes": 10,
+     "gated": false
+    },
+    {
+     "repo_id": "someone/Mistral-7B-Erotic-Roleplay-Merge-GGUF",
+     "downloads": 40000,
+     "likes": 300,
+     "gated": false
+    },
+    {
+     "repo_id": "bartowski/Mistral-Nemo-Instruct-2407-GGUF",
+     "downloads": 400000,
+     "likes": 100,
+     "gated": false
+    },
+    {
+     "repo_id": "bartowski/Mistral-Small-24B-Instruct-2501-GGUF",
+     "downloads": 500000,
+     "likes": 150,
+     "gated": false
+    }
+   ],
+   "good": [
+    "TheBloke/Mistral-7B-Instruct-v0.2-GGUF",
+    "bartowski/Mistral-7B-Instruct-v0.3-GGUF",
+    "mistralai/Mistral-7B-Instruct-v0.3-GGUF",
+    "QuantFactory/Mistral-7B-v0.3-GGUF"
+   ],
+   "must_beat": [
+    [
+     "mistralai/Mistral-7B-Instruct-v0.3-GGUF",
+     "someone/Mistral-7B-Erotic-Roleplay-Merge-GGUF"
+    ],
+    [
+     "bartowski/Mistral-7B-Instruct-v0.3-GGUF",
+     "bartowski/Mistral-Small-24B-Instruct-2501-GGUF"
+    ]
+   ]
+  },
+  {
+   "id": "deepseek-r1-distill-14b",
+   "kind": "model",
+   "query": "deepseek r1 distill 14b",
+   "purpose": "reasoning",
+   "followers": {
+    "unsloth": 12000,
+    "bartowski": 4000,
+    "lmstudio-community": 1500,
+    "Qwen": 90000,
+    "google": 60000,
+    "mistralai": 20000,
+    "microsoft": 50000,
+    "TheBloke": 9000,
+    "meta-llama": 70000,
+    "deepseek-ai": 80000
+   },
+   "candidates": [
+    {
+     "repo_id": "unsloth/DeepSeek-R1-Distill-Qwen-14B-GGUF",
+     "downloads": 600000,
+     "likes": 150,
+     "gated": false
+    },
+    {
+     "repo_id": "bartowski/DeepSeek-R1-Distill-Qwen-14B-GGUF",
+     "downloads": 400000,
+     "likes": 100,
+     "gated": false
+    },
+    {
+     "repo_id": "lmstudio-community/DeepSeek-R1-Distill-Qwen-14B-GGUF",
+     "downloads": 300000,
+     "likes": 50,
+     "gated": false
+    },
+    {
+     "repo_id": "unsloth/DeepSeek-R1-Distill-Qwen-1.5B-GGUF",
+     "downloads": 900000,
+     "likes": 120,
+     "gated": false
+    },
+    {
+     "repo_id": "unsloth/DeepSeek-R1-Distill-Qwen-32B-GGUF",
+     "downloads": 800000,
+     "likes": 200,
+     "gated": false
+    },
+    {
+     "repo_id": "unsloth/DeepSeek-R1-Distill-Llama-8B-GGUF",
+     "downloads": 900000,
+     "likes": 150,
+     "gated": false
+    },
+    {
+     "repo_id": "someone/DeepSeek-R1-Distill-Qwen-14B-Uncensored-GGUF",
+     "downloads": 50000,
+     "likes": 300,
+     "gated": false
+    }
+   ],
+   "good": [
+    "unsloth/DeepSeek-R1-Distill-Qwen-14B-GGUF",
+    "bartowski/DeepSeek-R1-Distill-Qwen-14B-GGUF",
+    "lmstudio-community/DeepSeek-R1-Distill-Qwen-14B-GGUF"
+   ],
+   "must_beat": [
+    [
+     "unsloth/DeepSeek-R1-Distill-Qwen-14B-GGUF",
+     "unsloth/DeepSeek-R1-Distill-Qwen-32B-GGUF"
+    ],
+    [
+     "bartowski/DeepSeek-R1-Distill-Qwen-14B-GGUF",
+     "unsloth/DeepSeek-R1-Distill-Llama-8B-GGUF"
+    ],
+    [
+     "lmstudio-community/DeepSeek-R1-Distill-Qwen-14B-GGUF",
+     "someone/DeepSeek-R1-Distill-Qwen-14B-Uncensored-GGUF"
+    ]
+   ]
+  },
+  {
+   "id": "phi-4",
+   "kind": "model",
+   "query": "phi 4",
+   "followers": {
+    "unsloth": 12000,
+    "bartowski": 4000,
+    "lmstudio-community": 1500,
+    "Qwen": 90000,
+    "google": 60000,
+    "mistralai": 20000,
+    "microsoft": 50000,
+    "TheBloke": 9000,
+    "meta-llama": 70000,
+    "deepseek-ai": 80000
+   },
+   "candidates": [
+    {
+     "repo_id": "microsoft/phi-4-gguf",
+     "downloads": 400000,
+     "likes": 500,
+     "gated": false
+    },
+    {
+     "repo_id": "unsloth/phi-4-GGUF",
+     "downloads": 500000,
+     "likes": 200,
+     "gated": false
+    },
+    {
+     "repo_id": "bartowski/phi-4-GGUF",
+     "downloads": 300000,
+     "likes": 100,
+     "gated": false
+    },
+    {
+     "repo_id": "unsloth/Phi-4-mini-instruct-GGUF",
+     "downloads": 600000,
+     "likes": 100,
+     "gated": false
+    },
+    {
+     "repo_id": "unsloth/Phi-4-reasoning-plus-GGUF",
+     "downloads": 200000,
+     "likes": 80,
+     "gated": false
+    },
+    {
+     "repo_id": "bartowski/Phi-3.5-mini-instruct-GGUF",
+     "downloads": 500000,
+     "likes": 100,
+     "gated": false
+    },
+    {
+     "repo_id": "someone/phi-4-abliterated-GGUF",
+     "downloads": 30000,
+     "likes": 100,
+     "gated": false
+    }
+   ],
+   "good": [
+    "microsoft/phi-4-gguf",
+    "unsloth/phi-4-GGUF",
+    "bartowski/phi-4-GGUF"
+   ],
+   "must_beat": [
+    [
+     "bartowski/phi-4-GGUF",
+     "someone/phi-4-abliterated-GGUF"
+    ],
+    [
+     "unsloth/phi-4-GGUF",
+     "bartowski/Phi-3.5-mini-instruct-GGUF"
+    ],
+    [
+     "bartowski/phi-4-GGUF",
+     "unsloth/Phi-4-mini-instruct-GGUF"
+    ]
+   ]
+  },
+  {
+   "id": "tinyllama",
+   "kind": "model",
+   "query": "tinyllama",
+   "followers": {
+    "unsloth": 12000,
+    "bartowski": 4000,
+    "lmstudio-community": 1500,
+    "Qwen": 90000,
+    "google": 60000,
+    "mistralai": 20000,
+    "microsoft": 50000,
+    "TheBloke": 9000,
+    "meta-llama": 70000,
+    "deepseek-ai": 80000
+   },
+   "candidates": [
+    {
+     "repo_id": "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF",
+     "downloads": 800000,
+     "likes": 200,
+     "gated": false
+    },
+    {
+     "repo_id": "QuantFactory/TinyLlama-1.1B-Chat-v1.0-GGUF",
+     "downloads": 20000,
+     "likes": 10,
+     "gated": false
+    },
+    {
+     "repo_id": "someone/TinyLlama-1.1B-Chat-Roleplay-GGUF",
+     "downloads": 5000,
+     "likes": 50,
+     "gated": false
+    },
+    {
+     "repo_id": "bartowski/Llama-3.2-1B-Instruct-GGUF",
+     "downloads": 900000,
+     "likes": 100,
+     "gated": false
+    }
+   ],
+   "good": [
+    "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"
+   ],
+   "must_beat": [
+    [
+     "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF",
+     "bartowski/Llama-3.2-1B-Instruct-GGUF"
+    ]
+   ]
+  },
+  {
+   "id": "agent-hermes",
+   "kind": "agent",
+   "query": "hermes",
+   "candidates": [
+    {
+     "full_name": "NousResearch/hermes-agent",
+     "description": "The agent that grows with you — a self-improving AI agent",
+     "stars": 250000,
+     "topics": [
+      "ai-agent",
+      "llm",
+      "agent"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "facebook/hermes",
+     "description": "A JavaScript engine optimized for React Native",
+     "stars": 10000,
+     "topics": [
+      "javascript",
+      "react-native"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "NousResearch/Hermes-Function-Calling",
+     "description": "Function calling for Hermes models",
+     "stars": 1300,
+     "topics": [
+      "llm",
+      "function-calling"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "hermes-js/hermes",
+     "description": "Message bus for Node",
+     "stars": 300,
+     "topics": [],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "mwiede/hermes",
+     "description": "Hermes HTTP Client in Go",
+     "stars": 400,
+     "topics": [
+      "http"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "hermes-agent-community/awesome-hermes-agent",
+     "description": "Curated list for hermes agent",
+     "stars": 3000,
+     "topics": [
+      "ai",
+      "agent"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    }
+   ],
+   "good": [
+    "NousResearch/hermes-agent"
+   ],
+   "note": "known agent AND a hugely starred unrelated JS engine"
+  },
+  {
+   "id": "agent-hermes-unknown",
+   "kind": "agent",
+   "query": "hermes",
+   "candidates": [
+    {
+     "full_name": "NousResearch/hermes-agent",
+     "description": "The agent that grows with you — a self-improving AI agent",
+     "stars": 250000,
+     "topics": [
+      "ai-agent",
+      "llm",
+      "agent"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "facebook/hermes",
+     "description": "A JavaScript engine optimized for React Native",
+     "stars": 10000,
+     "topics": [
+      "javascript",
+      "react-native"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "NousResearch/Hermes-Function-Calling",
+     "description": "Function calling for Hermes models",
+     "stars": 1300,
+     "topics": [
+      "llm",
+      "function-calling"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "hermes-js/hermes",
+     "description": "Message bus for Node",
+     "stars": 300,
+     "topics": [],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "mwiede/hermes",
+     "description": "Hermes HTTP Client in Go",
+     "stars": 400,
+     "topics": [
+      "http"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "hermes-agent-community/awesome-hermes-agent",
+     "description": "Curated list for hermes agent",
+     "stars": 3000,
+     "topics": [
+      "ai",
+      "agent"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    }
+   ],
+   "good": [
+    "NousResearch/hermes-agent"
+   ],
+   "note": "same pool but the app did not recognise the name: the ranker alone must still get it",
+   "known": []
+  },
+  {
+   "id": "agent-open-interpreter",
+   "kind": "agent",
+   "query": "open interpreter",
+   "candidates": [
+    {
+     "full_name": "OpenInterpreter/open-interpreter",
+     "description": "A natural language interface for computers",
+     "stars": 58000,
+     "topics": [
+      "ai",
+      "llm",
+      "interpreter",
+      "agent"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "AGPL-3.0",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "OpenInterpreter/01",
+     "description": "The #1 open-source voice interface for desktop, mobile, and ESP32 chips",
+     "stars": 8000,
+     "topics": [
+      "llm",
+      "voice"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "MikeBird28/open-interpreter-gui",
+     "description": "GUI for open interpreter",
+     "stars": 300,
+     "topics": [
+      "llm"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "tomchen/interpreter",
+     "description": "A tiny interpreter for expression language",
+     "stars": 90,
+     "topics": [
+      "parser"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "open-interpreter/awesome-open-interpreter",
+     "description": "Awesome list",
+     "stars": 200,
+     "topics": [
+      "ai"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    }
+   ],
+   "good": [
+    "OpenInterpreter/open-interpreter"
+   ],
+   "must_beat": [
+    [
+     "OpenInterpreter/open-interpreter",
+     "tomchen/interpreter"
+    ]
+   ]
+  },
+  {
+   "id": "agent-goose",
+   "kind": "agent",
+   "query": "goose",
+   "candidates": [
+    {
+     "full_name": "block/goose",
+     "description": "an open source, extensible AI agent that goes beyond code suggestions - install, execute, edit, and test with any LLM",
+     "stars": 28000,
+     "topics": [
+      "ai",
+      "agent",
+      "llm",
+      "mcp"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "Apache-2.0",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "pressly/goose",
+     "description": "A database migration tool. Supports SQL migrations and Go functions.",
+     "stars": 9000,
+     "topics": [
+      "database",
+      "migrations",
+      "sql"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "GooseLang/goose",
+     "description": "Goose language",
+     "stars": 400,
+     "topics": [
+      "language"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "goose-ai/goose-ui",
+     "description": "UI for goose",
+     "stars": 150,
+     "topics": [
+      "ai"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "gooseai/gpt-goose",
+     "description": "Goose experiments with GPT",
+     "stars": 60,
+     "topics": [
+      "gpt"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    }
+   ],
+   "good": [
+    "block/goose"
+   ],
+   "must_beat": [
+    [
+     "block/goose",
+     "pressly/goose"
+    ]
+   ],
+   "note": "a famous database tool shares the name"
+  },
+  {
+   "id": "agent-aider",
+   "kind": "agent",
+   "query": "aider",
+   "candidates": [
+    {
+     "full_name": "Aider-AI/aider",
+     "description": "aider is AI pair programming in your terminal",
+     "stars": 36000,
+     "topics": [
+      "ai",
+      "llm",
+      "coding",
+      "cli"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "Apache-2.0",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "lee-dora/aider-composer",
+     "description": "VSCode extension for aider",
+     "stars": 900,
+     "topics": [
+      "vscode",
+      "llm"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "hotovo/aider-desk",
+     "description": "Desktop app for aider",
+     "stars": 1200,
+     "topics": [
+      "ai",
+      "llm"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "aider/aider-tool",
+     "description": "an aider for plumbing",
+     "stars": 20,
+     "topics": [],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    }
+   ],
+   "good": [
+    "Aider-AI/aider"
+   ]
+  },
+  {
+   "id": "agent-opencode",
+   "kind": "agent",
+   "query": "opencode",
+   "candidates": [
+    {
+     "full_name": "sst/opencode",
+     "description": "AI coding agent, built for the terminal.",
+     "stars": 45000,
+     "topics": [
+      "ai",
+      "coding",
+      "agent",
+      "terminal"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "opencode-ai/opencode",
+     "description": "A powerful terminal-based AI assistant for developers",
+     "stars": 11000,
+     "topics": [
+      "ai",
+      "llm",
+      "cli"
+     ],
+     "last_push": "2025-09-20T00:00:00Z",
+     "archived": true,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "opencode-dev/opencode-vscode",
+     "description": "vscode ext",
+     "stars": 300,
+     "topics": [
+      "vscode"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "opencodeinterpreter/OpenCodeInterpreter",
+     "description": "Refining code generation with execution feedback",
+     "stars": 1700,
+     "topics": [
+      "llm",
+      "code"
+     ],
+     "last_push": "2024-06-01T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    }
+   ],
+   "good": [
+    "sst/opencode"
+   ],
+   "must_beat": [
+    [
+     "sst/opencode",
+     "opencode-ai/opencode"
+    ]
+   ],
+   "note": "an archived namesake must not lead"
+  },
+  {
+   "id": "agent-cline",
+   "kind": "agent",
+   "query": "cline",
+   "candidates": [
+    {
+     "full_name": "cline/cline",
+     "description": "Autonomous coding agent right in your IDE, capable of creating/editing files, executing commands, using the browser, and more",
+     "stars": 52000,
+     "topics": [
+      "ai",
+      "coding",
+      "agent",
+      "vscode"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "Apache-2.0",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "cline-community/cline-docs",
+     "description": "docs",
+     "stars": 100,
+     "topics": [],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "gnachman/cline",
+     "description": "Command line parser",
+     "stars": 150,
+     "topics": [
+      "cli"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "clinejs/cline",
+     "description": "tiny cli lines",
+     "stars": 40,
+     "topics": [],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    }
+   ],
+   "good": [
+    "cline/cline"
+   ]
+  },
+  {
+   "id": "agent-crewai",
+   "kind": "agent",
+   "query": "crewai",
+   "candidates": [
+    {
+     "full_name": "crewAIInc/crewAI",
+     "description": "Framework for orchestrating role-playing, autonomous AI agents",
+     "stars": 38000,
+     "topics": [
+      "ai",
+      "agents",
+      "llm"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "crewAIInc/crewAI-examples",
+     "description": "A collection of examples that show how to use CrewAI framework",
+     "stars": 5000,
+     "topics": [
+      "ai",
+      "agents"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "crewAIInc/crewAI-tools",
+     "description": "tools for crewai",
+     "stars": 900,
+     "topics": [
+      "ai"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "joaomdmoura/crewAI-fork",
+     "description": "fork",
+     "stars": 40,
+     "topics": [
+      "ai"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    }
+   ],
+   "good": [
+    "crewAIInc/crewAI"
+   ],
+   "must_beat": [
+    [
+     "crewAIInc/crewAI",
+     "crewAIInc/crewAI-examples"
+    ]
+   ]
+  },
+  {
+   "id": "agent-openhands",
+   "kind": "agent",
+   "query": "open hands",
+   "candidates": [
+    {
+     "full_name": "All-Hands-AI/OpenHands",
+     "description": "OpenHands: Code Less, Make More",
+     "stars": 62000,
+     "topics": [
+      "ai",
+      "agent",
+      "llm",
+      "coding"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "open-hands/open-hands",
+     "description": "helping hands charity site",
+     "stars": 25,
+     "topics": [],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "OpenHandsDev/openhands-ui",
+     "description": "UI",
+     "stars": 50,
+     "topics": [
+      "ai"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "openhands-kit/hands",
+     "description": "hand tracking",
+     "stars": 3000,
+     "topics": [
+      "vision"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    }
+   ],
+   "good": [
+    "All-Hands-AI/OpenHands"
+   ]
+  },
+  {
+   "id": "agent-generic-coding",
+   "kind": "agent",
+   "query": "coding agent terminal",
+   "candidates": [
+    {
+     "full_name": "anthropics/claude-code",
+     "description": "Claude Code is an agentic coding tool that lives in your terminal",
+     "stars": 60000,
+     "topics": [
+      "ai",
+      "agent",
+      "cli",
+      "coding"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "NOASSERTION",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "openai/codex",
+     "description": "Lightweight coding agent that runs in your terminal",
+     "stars": 50000,
+     "topics": [
+      "ai",
+      "coding",
+      "cli",
+      "agent"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "Apache-2.0",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "sst/opencode",
+     "description": "AI coding agent, built for the terminal.",
+     "stars": 45000,
+     "topics": [
+      "ai",
+      "coding",
+      "agent",
+      "terminal"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "block/goose",
+     "description": "an open source, extensible AI agent",
+     "stars": 28000,
+     "topics": [
+      "ai",
+      "agent",
+      "llm"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "jwasham/coding-interview-university",
+     "description": "A complete computer science study plan to become a software engineer.",
+     "stars": 320000,
+     "topics": [
+      "interview",
+      "computer-science"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "CC-BY-SA-4.0",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "someone/terminal-coding-agent",
+     "description": "terminal coding agent",
+     "stars": 25,
+     "topics": [
+      "agent"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    }
+   ],
+   "good": [
+    "anthropics/claude-code",
+    "openai/codex",
+    "sst/opencode",
+    "block/goose"
+   ],
+   "must_beat": [
+    [
+     "openai/codex",
+     "jwasham/coding-interview-university"
+    ],
+    [
+     "block/goose",
+     "jwasham/coding-interview-university"
+    ]
+   ],
+   "note": "a huge unrelated repo that shares the word 'coding'"
+  },
+  {
+   "id": "agent-autogen",
+   "kind": "agent",
+   "query": "autogen",
+   "candidates": [
+    {
+     "full_name": "microsoft/autogen",
+     "description": "A programming framework for agentic AI",
+     "stars": 50000,
+     "topics": [
+      "ai",
+      "agents",
+      "llm"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "CC-BY-4.0",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "ag2ai/ag2",
+     "description": "AG2 (formerly AutoGen): The Open-Source AgentOS",
+     "stars": 4000,
+     "topics": [
+      "ai",
+      "agents",
+      "autogen"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "Apache-2.0",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "Significant-Gravitas/AutoGPT",
+     "description": "AutoGPT is the vision of accessible AI for everyone",
+     "stars": 175000,
+     "topics": [
+      "ai",
+      "gpt",
+      "agent",
+      "autonomous"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "NOASSERTION",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "autogen-ui/autogen-ui",
+     "description": "UI",
+     "stars": 800,
+     "topics": [
+      "ai"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "kimbring2/autogen-car",
+     "description": "car generator",
+     "stars": 90,
+     "topics": [],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    }
+   ],
+   "good": [
+    "microsoft/autogen"
+   ],
+   "must_beat": [
+    [
+     "microsoft/autogen",
+     "Significant-Gravitas/AutoGPT"
+    ]
+   ]
+  },
+  {
+   "id": "mistral-glued-size",
+   "kind": "model",
+   "query": "mistral 7b",
+   "followers": {
+    "unsloth": 12000,
+    "bartowski": 4000,
+    "lmstudio-community": 1500,
+    "Qwen": 90000,
+    "openai": 100000,
+    "ggml-org": 3000
+   },
+   "candidates": [
+    {
+     "repo_id": "someone/Mistral7B-Instruct-GGUF",
+     "downloads": 20000,
+     "likes": 30,
+     "gated": false
+    },
+    {
+     "repo_id": "bartowski/Mistral-Nemo-Instruct-2407-GGUF",
+     "downloads": 400000,
+     "likes": 100,
+     "gated": false
+    },
+    {
+     "repo_id": "someone/Mistral-7B-A3B-GGUF",
+     "downloads": 1000,
+     "likes": 2,
+     "gated": false
+    }
+   ],
+   "good": [
+    "someone/Mistral7B-Instruct-GGUF"
+   ],
+   "must_beat": [
+    [
+     "someone/Mistral7B-Instruct-GGUF",
+     "bartowski/Mistral-Nemo-Instruct-2407-GGUF"
+    ]
+   ],
+   "note": "a name written 'Mistral7B' still counts as the 7B"
+  },
+  {
+   "id": "moe-tag-is-not-a-size",
+   "kind": "model",
+   "query": "qwen3 3b",
+   "followers": {
+    "unsloth": 12000,
+    "bartowski": 4000,
+    "lmstudio-community": 1500,
+    "Qwen": 90000,
+    "openai": 100000,
+    "ggml-org": 3000
+   },
+   "candidates": [
+    {
+     "repo_id": "unsloth/Qwen3-30B-A3B-GGUF",
+     "downloads": 1500000,
+     "likes": 300,
+     "gated": false
+    },
+    {
+     "repo_id": "someone/Qwen3-3B-GGUF",
+     "downloads": 15000,
+     "likes": 20,
+     "gated": false
+    },
+    {
+     "repo_id": "unsloth/Qwen3-4B-GGUF",
+     "downloads": 900000,
+     "likes": 120,
+     "gated": false
+    }
+   ],
+   "good": [
+    "someone/Qwen3-3B-GGUF"
+   ],
+   "must_beat": [
+    [
+     "someone/Qwen3-3B-GGUF",
+     "unsloth/Qwen3-30B-A3B-GGUF"
+    ]
+   ],
+   "note": "30B-A3B has 3B *active* parameters; it is not a 3B model"
+  },
+  {
+   "id": "gpt-oss-20b",
+   "kind": "model",
+   "query": "gpt-oss 20b",
+   "followers": {
+    "unsloth": 12000,
+    "bartowski": 4000,
+    "lmstudio-community": 1500,
+    "Qwen": 90000,
+    "openai": 100000,
+    "ggml-org": 3000
+   },
+   "candidates": [
+    {
+     "repo_id": "unsloth/gpt-oss-20b-GGUF",
+     "downloads": 700000,
+     "likes": 200,
+     "gated": false
+    },
+    {
+     "repo_id": "ggml-org/gpt-oss-20b-GGUF",
+     "downloads": 500000,
+     "likes": 150,
+     "gated": false
+    },
+    {
+     "repo_id": "unsloth/gpt-oss-120b-GGUF",
+     "downloads": 400000,
+     "likes": 150,
+     "gated": false
+    },
+    {
+     "repo_id": "lmstudio-community/gpt-oss-20b-GGUF",
+     "downloads": 300000,
+     "likes": 60,
+     "gated": false
+    },
+    {
+     "repo_id": "someone/gpt-oss-20b-uncensored-GGUF",
+     "downloads": 90000,
+     "likes": 300,
+     "gated": false
+    }
+   ],
+   "good": [
+    "unsloth/gpt-oss-20b-GGUF",
+    "ggml-org/gpt-oss-20b-GGUF",
+    "lmstudio-community/gpt-oss-20b-GGUF"
+   ],
+   "must_beat": [
+    [
+     "ggml-org/gpt-oss-20b-GGUF",
+     "unsloth/gpt-oss-120b-GGUF"
+    ],
+    [
+     "lmstudio-community/gpt-oss-20b-GGUF",
+     "someone/gpt-oss-20b-uncensored-GGUF"
+    ]
+   ]
+  },
+  {
+   "id": "agent-browser-use",
+   "kind": "agent",
+   "query": "browser use",
+   "candidates": [
+    {
+     "full_name": "browser-use/browser-use",
+     "description": "Make websites accessible for AI agents",
+     "stars": 70000,
+     "topics": [
+      "ai",
+      "agent",
+      "browser"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "browser-use/web-ui",
+     "description": "Run AI agent in your browser",
+     "stars": 14000,
+     "topics": [
+      "ai",
+      "agent"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "someone/use-browser",
+     "description": "react hook to use the browser",
+     "stars": 300,
+     "topics": [
+      "react"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "microsoft/playwright",
+     "description": "Playwright is a framework for Web Testing and Automation",
+     "stars": 75000,
+     "topics": [
+      "testing",
+      "browser"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    }
+   ],
+   "good": [
+    "browser-use/browser-use"
+   ],
+   "must_beat": [
+    [
+     "browser-use/browser-use",
+     "microsoft/playwright"
+    ]
+   ]
+  },
+  {
+   "id": "agent-continue",
+   "kind": "agent",
+   "query": "continue",
+   "candidates": [
+    {
+     "full_name": "continuedev/continue",
+     "description": "Ship faster with Continuous AI. Open-source CLI tools, context-aware code assistant",
+     "stars": 30000,
+     "topics": [
+      "ai",
+      "llm",
+      "coding",
+      "agent"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "Apache-2.0",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "continue-dev/continue-cli",
+     "description": "cli",
+     "stars": 200,
+     "topics": [
+      "ai"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "someone/continue",
+     "description": "continue statement tutorial",
+     "stars": 900,
+     "topics": [
+      "tutorial"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "nvie/gitflow",
+     "description": "git continue",
+     "stars": 20000,
+     "topics": [
+      "git"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    }
+   ],
+   "good": [
+    "continuedev/continue"
+   ]
+  },
+  {
+   "id": "agent-smolagents",
+   "kind": "agent",
+   "query": "smol agents",
+   "candidates": [
+    {
+     "full_name": "huggingface/smolagents",
+     "description": "🤗 smolagents: a barebones library for agents that think in code.",
+     "stars": 22000,
+     "topics": [
+      "ai",
+      "agents",
+      "llm"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "Apache-2.0",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "someone/smol-agents-examples",
+     "description": "examples",
+     "stars": 150,
+     "topics": [
+      "agents"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "smol-ai/developer",
+     "description": "the first library to let you embed a developer agent",
+     "stars": 12000,
+     "topics": [
+      "ai",
+      "agent"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    }
+   ],
+   "good": [
+    "huggingface/smolagents"
+   ]
+  },
+  {
+   "id": "agent-typo-hermis",
+   "kind": "agent",
+   "query": "hermis",
+   "candidates": [
+    {
+     "full_name": "NousResearch/hermes-agent",
+     "description": "The agent that grows with you — a self-improving AI agent",
+     "stars": 250000,
+     "topics": [
+      "ai-agent",
+      "llm",
+      "agent"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "facebook/hermes",
+     "description": "A JavaScript engine optimized for React Native",
+     "stars": 10000,
+     "topics": [
+      "javascript",
+      "react-native"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "NousResearch/Hermes-Function-Calling",
+     "description": "Function calling for Hermes models",
+     "stars": 1300,
+     "topics": [
+      "llm",
+      "function-calling"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "hermes-js/hermes",
+     "description": "Message bus for Node",
+     "stars": 300,
+     "topics": [],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "mwiede/hermes",
+     "description": "Hermes HTTP Client in Go",
+     "stars": 400,
+     "topics": [
+      "http"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "hermes-agent-community/awesome-hermes-agent",
+     "description": "Curated list for hermes agent",
+     "stars": 3000,
+     "topics": [
+      "ai",
+      "agent"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "someone/hermis",
+     "description": "personal site",
+     "stars": 3,
+     "topics": [],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    }
+   ],
+   "good": [
+    "NousResearch/hermes-agent"
+   ],
+   "note": "a typo: GitHub finds nothing useful, so the app's own near-name lookup has to supply the repo"
+  },
+  {
+   "id": "agent-typo-open-intepreter",
+   "kind": "agent",
+   "query": "open intepreter",
+   "candidates": [
+    {
+     "full_name": "OpenInterpreter/open-interpreter",
+     "description": "A natural language interface for computers",
+     "stars": 58000,
+     "topics": [
+      "ai",
+      "llm",
+      "interpreter",
+      "agent"
+     ],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "Organization",
+     "language": null,
+     "url": null
+    },
+    {
+     "full_name": "someone/intepreter",
+     "description": "typo",
+     "stars": 2,
+     "topics": [],
+     "last_push": "2026-09-20T00:00:00Z",
+     "archived": false,
+     "license": "MIT",
+     "owner_type": "User",
+     "language": null,
+     "url": null
+    }
+   ],
+   "good": [
+    "OpenInterpreter/open-interpreter"
+   ],
+   "known": [
+    "OpenInterpreter/open-interpreter"
+   ]
+  }
+ ]
+}

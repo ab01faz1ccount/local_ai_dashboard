@@ -116,6 +116,39 @@ pytest tests/backend -q
 cd frontend && npx vitest run
 ```
 
+### 2.6 What to run, in order, and when
+
+Run top to bottom after copying in new files or before you commit. Each step
+says what a good result looks like. If one fails, fix it before moving on:
+later steps assume the earlier ones.
+
+| # | Command (from the project root unless noted) | When | Good result |
+|---|---|---|---|
+| 1 | `pip install -r requirements.txt` | After new files arrive (a new dependency such as `pyyaml` may be in them) | no errors |
+| 2 | `pytest tests/backend -q` | After every change, and before every commit | all pass; the golden search cases (step 4) run inside it too |
+| 3 | `cd frontend && npx vitest run` | Same | all pass |
+| 4 | `python scripts/eval_search.py` | After changing `model_search.py`, `agent_search.py` or the golden file | last line `29/29 cases pass` (the count grows as you add cases). Add `-v` to see every ranking |
+| 5 | `cd frontend && npm run build` | Before a release or after editing `.ts`/`.tsx` | no TypeScript errors (this runs `tsc`) |
+| 6 | `python -m backend.main`, then `cd frontend && npm run dev` | After steps 1-5 | the app opens; the status bar shows the backend connected |
+
+Checks that need your real machine, run when the matching area changed:
+
+| Area | Command | When | Good result |
+|---|---|---|---|
+| GPU | `.\llama-server.exe --list-devices` | After installing a CUDA or Vulkan build, before blaming the app for GPU 0% | your GPU is listed |
+| Search on real data | `python scripts/probe_hf_search.py "qwen3.5-9B-Q6KM"` | When Hugging Face results look wrong, or follower counts show n/a | ranked results with reasons, plus the raw follower fields; paste it back if something looks off |
+| Search golden cases from real data | `python scripts/capture_search_case.py model "<query>" --out my_cases.json`, fill in `good`, then `python scripts/eval_search.py my_cases.json` | When a query you care about ranks badly. Capture before changing weights, so the fix is measured against what the sources really returned | the case passes after your change, and the bundled 29 still pass |
+| MCP server | MCP page: **Connect** | After adding a server | status connected, tools listed |
+| MCP in the app's chat | Chat with the server attached; try allow once / session / always / deny | After changing permissions or the agent loop | each choice behaves as described in section 7 |
+| MCP crash detection | Kill the server process while connected | After changing the MCP manager | the status turns red within about 15 s |
+| MCP in Hermes | In the Tools panel: **Write to Hermes's config**, then `hermes mcp test lai_<name>`, then `/reload-mcp` inside Hermes | After attaching or detaching a server for Hermes | the test connects and lists the tools |
+| MCP in Open Interpreter | **Write to Open Interpreter's config**, then `interpreter mcp list`, restart it | Same | the `lai_<name>` entry is listed (this command shows the entry; it does not connect) |
+| Agent pairing | Open the agent's terminal, send one message | After configuring an agent | the pairing line says the agent's request reached the runtime (the server log saw it) |
+
+A good order for a first full pass after a big update: steps 1-6, then
+`--list-devices`, then one MCP server through the app's own chat, then the same
+server through Hermes or Open Interpreter.
+
 ---
 
 ## 3. First run: get a model answering
@@ -239,15 +272,19 @@ Choices are remembered in your browser.
 Setup → Add a model → online. Type a name loosely: `qwen3.5 9b`, even with a
 quantization (`qwen3.5-9B-Q6KM`). The app:
 
-- reads size (`9b`) and quantization (`Q6_K_M`) out of your text,
+- reads size (`9b`) and quantization out of your text (`Q6KM` becomes
+  `Q6_K`: llama.cpp has no Q6_K_M file, so that is the file you mean),
 - searches Hugging Face for GGUF repos, repairs obvious typos,
+- treats a size as a word of its own (`4b` does not match `14b` or the `A3B`
+  tag of a 30B mixture model) and pushes down repos whose name states a
+  different size,
 - ranks by relevance, **publisher trust** (well-known creators and
   quantizers), downloads, likes and followers,
 - keeps plain conversions on top and puts fine-tunes and merges in a
   collapsed "modified versions" group,
 - shows a memory estimate and fit verdict for your machine.
 
-A quantization such as `Q6_K_M` is a *file* inside a repo, not part of the
+A quantization such as `Q6_K` is a *file* inside a repo, not part of the
 repo name, so it is matched when you open the repo's files.
 
 Pick a file and download. Downloads are resumable, checked for free disk
@@ -267,6 +304,36 @@ Installing shows the exact command and needs your confirmation. Package
 installs (`pip`, `npm -g`, `cargo`, ...) go to the package manager's own
 location, so the app can't redirect them. Instead the **agent location bar**
 shows where the executable ended up and lets you register it.
+
+A typo in the name of a well-known agent (`hermis`, `claud code`) still finds
+it. Ordinary words (`code`, `python`) are left alone.
+
+### 5.2b Checking search quality
+The ranking weights were set by hand, so they are checked against **golden
+cases**: a query, the pool of results a source returned for it, and which result
+must come first (and which must rank above which).
+
+```bash
+python scripts/eval_search.py            # bundled cases (tests/fixtures/search_golden.json)
+python scripts/eval_search.py -v         # with every ranking
+```
+
+The bundled cases were written by hand from general knowledge, with
+approximate star and download numbers: they guard against regressions, but
+they are not live data. To check a query that matters to you with real data,
+on your own machine:
+
+```bash
+python scripts/capture_search_case.py model "qwen3.5-9B-Q6KM" --out my_cases.json
+python scripts/capture_search_case.py agent "hermes"          --out my_cases.json
+# edit my_cases.json: fill in "good" (and optionally "must_beat"), then
+python scripts/eval_search.py my_cases.json
+```
+
+An unlabeled case (empty `good`) is reported as failing, so a capture can't
+pass by accident. Building the cases found three real problems that are now
+fixed: a `4b` search ranking `14B` repos first, `Q6KM` matching no file, and
+typos in agent names finding nothing.
 
 ### 5.3 Pairing an agent with a model
 In Chats, open the agent terminal for a chat whose runtime is running.
@@ -301,9 +368,9 @@ MCP lets a model use tools that live outside the model. This app is the MCP
 - It offers the model only the tools of servers you **attached to that
   agent** and that are **currently connected**.
 - It never runs a tool without the Permission Engine saying yes.
-- Today MCP tools are used by the **app's own chat loop**. Hermes and Open
-  Interpreter do not receive the app's MCP servers (planned: write them into
-  each agent's own config).
+- In the **app's own chat loop** the model uses these tools directly. An
+  **external agent** (Hermes, Open Interpreter) runs tools itself from its own
+  config, so the app can write the attached servers there: see 6.6.
 
 ### 6.2 Adding a server
 MCP page → add. Fields: name, transport, and either a command (stdio) or a
@@ -362,6 +429,33 @@ one level. Hints are claims by the server, not facts, so they only pre-select
 the prompt; the app always asks.
 
 ---
+
+### 6.6 Giving the servers to Hermes / Open Interpreter
+In the chat's **Tools** panel, after attaching servers to an agent that has a
+real backend, a box shows what is in that agent's own config file and a
+**Write to <agent>'s config** button.
+
+- Files: Hermes `~/.hermes/config.yaml` (`mcp_servers:`), Open Interpreter
+  `~/.openinterpreter/config.toml` (`[mcp_servers.<name>]`). A custom CLI can
+  declare one in its spec: `"mcp": {"format": "toml"|"yaml", "path": "...", "key": "mcp_servers"}`.
+- The app only manages entries named `lai_<server>`. Your own servers and every
+  other setting stay as they are; the original file is copied once to
+  `<file>.lai-backup`. Detaching a server removes its `lai_` entry on the next write.
+- Env and header values (API keys) go into that file **in plain text**, so a
+  server that has them waits until you tick the confirmation box.
+- After writing, the app reads the file back. **"In its config" means the file
+  says so, not that the agent connected.** "Check with <agent>" runs the agent's
+  own CLI: `hermes mcp test` really connects; for Open Interpreter the check
+  (`interpreter mcp get`) only prints the entry. In Hermes run `/reload-mcp`
+  (or restart it) to pick up changes; Open Interpreter reads its file at start.
+- Transports: stdio and http. `sse` servers are listed as not supported here.
+- **Permissions differ.** The app's Permission Engine does not govern an
+  external agent's tool calls: the agent runs them. What carries over is the
+  tool on/off list: tools you disabled in the app are excluded in the agent's
+  file (Hermes `tools.exclude`, Open Interpreter `disabled_tools`). Use each
+  agent's own approval settings for the rest.
+- Not verified on a real install in development: check the result with the
+  agent itself (`hermes mcp test lai_<name>`, `interpreter mcp list`).
 
 ## 7. Permissions
 
@@ -547,6 +641,6 @@ the agent's executable path in the location bar.
 
 ### Known limits
 - GGUF only; other formats are planned.
-- MCP is not yet written into external agents' own configs.
-- Ranking weights are hand-set.
+- External agents get MCP servers through their own config files (6.6); the app's permission prompts don't apply to them.
+- Ranking weights are hand-set; they are regression-checked against golden cases (5.2b) that are approximations, not live data.
 - Hardware fit and per-project usage are estimates.

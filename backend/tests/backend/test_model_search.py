@@ -8,9 +8,10 @@ from backend.core.net_util import DiscoveryError
 # ---------- understanding the query ----------
 
 def test_quant_is_pulled_out_and_normalised():
+    # "Q6KM" is how people type Q6_K -- there is no Q6_K_M file in llama.cpp land
     for text in ("qwen3.5-9B-Q6KM", "qwen3.5 9b q6_k_m", "Qwen3.5-9B Q6-K-M"):
         p = ms.parse_query(text)
-        assert p["quant"] == "Q6_K_M", text
+        assert p["quant"] == "Q6_K", text
         assert p["tokens"] == ["qwen3.5", "9b"], text
     assert ms.parse_query("llama 3 8b q8")["quant"] == "Q8"
     assert ms.parse_query("llama 3 8b q8_0")["quant"] == "Q8_0"

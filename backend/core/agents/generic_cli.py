@@ -155,7 +155,24 @@ def validate_spec(spec) -> dict:
         if v is not None and (not isinstance(v, list) or not all(isinstance(i, str) for i in v)):
             raise SpecError(f"{key} must be a list of text.")
 
+    mcp_spec = spec.get("mcp")
+    out_mcp = None
+    if mcp_spec is not None:
+        if not isinstance(mcp_spec, dict):
+            raise SpecError("mcp must be an object.")
+        fmt = mcp_spec.get("format")
+        if fmt not in ("toml", "yaml"):
+            raise SpecError("mcp.format must be \"toml\" or \"yaml\".")
+        mpath = str(mcp_spec.get("path") or "").strip()
+        if not mpath:
+            raise SpecError("mcp.path is required (the config file that lists MCP servers).")
+        mkey = str(mcp_spec.get("key") or "mcp_servers").strip()
+        if not re.match(r"^[A-Za-z0-9_-]+$", mkey):
+            raise SpecError("mcp.key must be a plain table name.")
+        out_mcp = {"format": fmt, "path": mpath, "key": mkey}
+
     return {
+        "mcp": out_mcp,
         "name": name,
         "executable": exe,
         "version_args": list(spec.get("version_args") or ["--version"]),
@@ -321,6 +338,15 @@ class GenericCliAdapter(AgentAdapter):
         os.replace(tmp, path)
         ran.append(f"write {path}")
         return ran
+
+    def mcp_store(self):
+        m = self.spec.get("mcp")
+        if not m:
+            return None
+        from . import mcp_sync
+
+        profile = mcp_sync.McpProfile(m["format"], container=m["key"])
+        return mcp_sync.McpStore(Path(os.path.expanduser(m["path"])), profile)
 
     def build_launch_command(self, resume_session_id: Optional[str] = None) -> list[str]:
         exe = self._executable()

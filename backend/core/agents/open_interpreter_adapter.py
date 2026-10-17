@@ -127,6 +127,16 @@ class OpenInterpreterAdapter(AgentAdapter):
         ran.append(f"write {path}")
         return ran
 
+    def mcp_store(self):
+        from . import mcp_sync
+
+        return mcp_sync.McpStore(self._config_path(), mcp_sync.OPEN_INTERPRETER_PROFILE)
+
+    def mcp_probe_command(self, agent_key: str):
+        exe = self._executable()
+        # `mcp get` prints the configured server; it does not connect.
+        return [exe, "mcp", "get", agent_key] if exe else None
+
     def launch_env(self, api_key: str = "sk-no-key", **_endpoint) -> dict[str, str]:
         return {API_KEY_ENV: api_key}
 

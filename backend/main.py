@@ -26,6 +26,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api.connect import build_reaper
+from .api.agent_mcp import router as agent_mcp_router
 from .api.connect import router as connect_router
 from .api.discovery import router as discovery_router
 from .api.http import require_token
@@ -115,6 +116,7 @@ app.include_router(http_router, dependencies=[Depends(require_token)])
 app.include_router(discovery_router)
 app.include_router(connect_router)
 app.include_router(mcp_router)
+app.include_router(agent_mcp_router)
 app.include_router(permissions_router)
 app.include_router(tools_router)
 app.include_router(ws_router)

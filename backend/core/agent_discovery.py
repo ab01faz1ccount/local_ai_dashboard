@@ -45,6 +45,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 from urllib.parse import quote
 
+from . import agent_search
 from .net_util import DiscoveryError, get_json, get_text
 
 GITHUB_API = "https://api.github.com"
@@ -60,38 +61,88 @@ REPO_FULL_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0
 # Search
 # ---------------------------------------------------------------------
 
-def search_agents(query: str) -> list[dict]:
+def _repo_item(item: dict) -> Optional[dict]:
+    """One GitHub repository JSON object -> the fields the app shows (None if unusable)."""
+    full_name = item.get("full_name")
+    if not isinstance(full_name, str) or not REPO_FULL_NAME_RE.match(full_name):
+        return None
+    owner = item.get("owner") or {}
+    license_info = item.get("license") or {}
+    return {
+        "full_name": full_name,
+        "description": item.get("description"),
+        "stars": item.get("stargazers_count") or 0,
+        "url": item.get("html_url"),
+        "language": item.get("language"),
+        "license": license_info.get("spdx_id"),
+        "last_push": item.get("pushed_at"),
+        "archived": bool(item.get("archived")),
+        "owner_type": owner.get("type"),  # "Organization" vs "User"
+        "topics": item.get("topics") or [],
+    }
+
+
+def _github_json(url: str):
+    return get_json(url, allowed_hosts=GITHUB_ALLOWED_HOSTS, headers={"Accept": "application/vnd.github+json"})
+
+
+def search_agents(query: str, limit: int = 12) -> list[dict]:
+    """Ranked GitHub repositories for an agent name (see core/agent_search.py).
+
+    Runs the query in the spellings a project name can take, looks up the
+    canonical repo of a well-known agent when the query names one, and scores
+    every hit. A failure of any one extra lookup never fails the search; only
+    a failure of the main query does."""
     q = query.strip()
     if not q:
         raise DiscoveryError("اسم agent (حتی تقریبی) رو بنویس.", "bad_input")
 
-    url = (
-        f"{GITHUB_API}/search/repositories?q={quote(q + ' in:name,description,topics fork:false')}"
-        f"&per_page={SEARCH_PER_PAGE}"
+    merged, known_names = collect_agent_pool(q)
+    scored = agent_search.rank(
+        [agent_search.score_agent(r, q, known=r["full_name"].lower() in known_names) for r in merged.values()]
     )
-    data = get_json(url, allowed_hosts=GITHUB_ALLOWED_HOSTS, headers={"Accept": "application/vnd.github+json"})
-    results = []
-    for item in data.get("items", []):
-        full_name = item.get("full_name")
-        if not isinstance(full_name, str) or not REPO_FULL_NAME_RE.match(full_name):
-            continue
-        owner = item.get("owner") or {}
-        license_info = item.get("license") or {}
-        results.append(
-            {
-                "full_name": full_name,
-                "description": item.get("description"),
-                "stars": item.get("stargazers_count") or 0,
-                "url": item.get("html_url"),
-                "language": item.get("language"),
-                "license": license_info.get("spdx_id"),
-                "last_push": item.get("pushed_at"),
-                "archived": bool(item.get("archived")),
-                "owner_type": owner.get("type"),  # "Organization" vs "User"
-                "topics": item.get("topics") or [],
-            }
+    return scored[:limit]
+
+
+def collect_agent_pool(q: str) -> tuple[dict[str, dict], set[str]]:
+    """The unscored candidates for a query (every GitHub hit plus the direct
+    lookups) and the lower-cased names of the known agents it matched. Split
+    out so scripts/capture_search_case.py can store exactly what the sources
+    returned, as a golden case."""
+    merged: dict[str, dict] = {}
+    known_names = {r.lower() for r in agent_search.known_repos_for(q)}
+
+    for i, variant in enumerate(agent_search.query_variants(q)):
+        scope = "in:name" if variant["scope"] == "name" else "in:name,description,topics"
+        url = (
+            f"{GITHUB_API}/search/repositories?q={quote(variant['q'] + ' ' + scope + ' fork:false')}"
+            f"&per_page={SEARCH_PER_PAGE}"
         )
-    return results
+        try:
+            data = _github_json(url)
+        except DiscoveryError:
+            if i == 0:
+                raise  # the main query failing is a real failure (offline, rate limit...)
+            continue
+        for item in (data.get("items", []) if isinstance(data, dict) else []):
+            row = _repo_item(item)
+            if row and row["full_name"].lower() not in {k.lower() for k in merged}:
+                merged[row["full_name"]] = row
+
+    # Canonical repos of known agents, and an exact owner/name when typed.
+    direct = agent_search.direct_repo(q)
+    wanted = list(agent_search.known_repos_for(q)) + ([direct] if direct else [])
+    for repo in wanted:
+        if repo.lower() in {k.lower() for k in merged}:
+            continue
+        try:
+            row = _repo_item(_github_json(f"{GITHUB_API}/repos/{quote(repo, safe='/')}") or {})
+        except DiscoveryError:
+            continue
+        if row:
+            merged[row["full_name"]] = row
+
+    return merged, known_names
 
 
 # ---------------------------------------------------------------------

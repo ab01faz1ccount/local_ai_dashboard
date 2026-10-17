@@ -91,6 +91,8 @@ W_PURPOSE = 12
 PENALTY_PER_EXTRA_WORD = 5
 PENALTY_EXTRA_CAP = 20
 PENALTY_GATED = 10
+PENALTY_SIZE_MISMATCH = 12  # the name states a parameter count, and not the one asked for
+SIZE_TOKEN_WEIGHT = 2  # a size is the most telling word in a model search
 
 # ---------------------------------------------------------------------
 # Query understanding
@@ -107,8 +109,19 @@ _QUANT_QUERY_RE = re.compile(
 _SIZE_RE = re.compile(r"(?<![A-Za-z0-9.])(\d+(?:\.\d+)?)\s?[Bb](?![A-Za-z])")
 
 
+# Spellings people type for quantizations that don't exist as such. llama.cpp
+# has Q6_K (no S/M variants) and Q2_K, so "Q6KM" means Q6_K -- left alone it would
+# match no file at all, on the most common thing people type.
+_QUANT_ALIASES = {"Q6_K_M": "Q6_K", "Q6_K_S": "Q6_K", "Q2_K_M": "Q2_K"}
+
+
 def canonical_quant(raw: str) -> str:
     """'q4km' / 'q4_k_m' / 'Q4-K-M' -> 'Q4_K_M'; 'q8' stays the prefix 'Q8'."""
+    name = _canonical_quant(raw)
+    return _QUANT_ALIASES.get(name, name)
+
+
+def _canonical_quant(raw: str) -> str:
     s = raw.lower().replace("-", "_")
     if s in ("bf16", "f16", "fp16", "f32", "mxfp4"):
         return {"fp16": "F16"}.get(s, s.upper())
@@ -219,12 +232,43 @@ def group_key(repo_id: str) -> str:
     return _squash("".join(words))
 
 
+_SIZE_TOKEN = re.compile(r"^\d+(?:\.\d+)?b$")
+
+
 def coverage(repo_id: str, query_tokens: list[str]) -> float:
+    """Share of the query's words found in the name; a size counts double."""
     if not query_tokens:
         return 0.0
     hay = _squash(repo_id)
-    hits = sum(1 for t in query_tokens if _squash(t) and _squash(t) in hay)
-    return hits / len(query_tokens)
+    words = set(name_info(repo_id)["words"])
+    hits = total = 0
+    for t in query_tokens:
+        sq = _squash(t)
+        if not sq:
+            continue
+        if _SIZE_TOKEN.match(t):
+            # A size must be the name's own word: "4b" is not inside "14b" or "34b",
+            # nor the "A3B" / "E4B" active-size tags. A glued form ("mistral7b") counts.
+            total += SIZE_TOKEN_WEIGHT
+            if any(w == t or (w.endswith(t) and re.fullmatch(r"[a-z]{3,}", w[: -len(t)]) is not None) for w in words):
+                hits += SIZE_TOKEN_WEIGHT
+        else:
+            total += 1
+            hits += sq in hay
+    return hits / total if total else 0.0
+
+
+def stated_sizes(repo_id: str) -> list[float]:
+    """Parameter counts the name itself states ('8B', '1.5B'); MoE tags like A3B are not sizes."""
+    return [float(w[:-1]) for w in name_info(repo_id)["words"] if _SIZE_TOKEN.match(w)]
+
+
+def size_mismatch(repo_id: str, wanted_b: Optional[float]) -> Optional[list[float]]:
+    """The sizes the name states, if the query asked for one and none of them is it."""
+    if not wanted_b:
+        return None
+    sizes = stated_sizes(repo_id)
+    return sizes if sizes and all(abs(x - wanted_b) > 1e-9 for x in sizes) else None
 
 
 # ---------------------------------------------------------------------
@@ -293,6 +337,7 @@ def score_repo(item: dict, parsed: dict, followers: Optional[int] = None, purpos
     rel = coverage(repo_id, tokens)
     extras = extra_words(repo_id, tokens)
     tier = publisher_tier(author)
+    wrong_size = size_mismatch(repo_id, parsed.get("size_b"))
 
     parts = {
         "name_match": round(W_RELEVANCE * rel, 1),
@@ -304,13 +349,14 @@ def score_repo(item: dict, parsed: dict, followers: Optional[int] = None, purpos
         "quant_in_name": W_QUANT_IN_NAME if parsed.get("quant") and parsed["quant"] in info["quants"] else 0,
         "purpose": W_PURPOSE if purpose_match(info["words"], purpose) else 0,
         "gated_penalty": -PENALTY_GATED if item.get("gated") else 0,
+        "size_penalty": -PENALTY_SIZE_MISMATCH if wrong_size else 0,
     }
     # publisher + followers share one budget so a big follower count can't
     # stack on top of a tier to outweigh the name match itself
     trust_total = min(W_TRUST_CAP, parts["publisher"] + parts["followers"])
     total = (
         parts["name_match"] + parts["modified_penalty"] + trust_total + parts["downloads"] + parts["likes"]
-        + parts["quant_in_name"] + parts["purpose"] + parts["gated_penalty"]
+        + parts["quant_in_name"] + parts["purpose"] + parts["gated_penalty"] + parts["size_penalty"]
     )
 
     why: list[str] = []
@@ -321,6 +367,8 @@ def score_repo(item: dict, parsed: dict, followers: Optional[int] = None, purpos
                    f"in the name ({', '.join(extras[:3])}{', …' if len(extras) > 3 else ''}) — usually a modified version")
     elif rel > 0:
         why.append(f"Matches {round(rel * 100)}% of your words")
+    if wrong_size:
+        why.append(f"Name says {', '.join(f'{x:g}B' for x in wrong_size)}, you asked for {parsed['size_b']:g}B")
     if tier != "unknown":
         why.append(_TIER_LABEL[tier])
     if followers:

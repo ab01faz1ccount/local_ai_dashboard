@@ -750,6 +750,36 @@ export interface ListEventsParams {
 export type McpTransport = "stdio" | "http" | "sse";
 export type McpStatusName = "DISCONNECTED" | "CONNECTING" | "CONNECTED" | "ERROR";
 
+export interface AgentMcpServerState {
+  server: string;
+  agent_key: string;
+  status: "in_sync" | "missing" | "differs" | "needs_confirm" | "unsupported";
+  detail: string;
+  fields: string[]; // names only, never values
+}
+
+export interface AgentMcpReport {
+  agent_name: string;
+  path: string;
+  servers: AgentMcpServerState[];
+  stale: string[];
+  commands_ran: string[];
+  applied: boolean;
+  in_sync: boolean;
+  can_probe: boolean;
+  probe_is_live: boolean;
+  permission_note: string;
+}
+
+export interface AgentMcpProbe {
+  server: string;
+  agent_key: string;
+  command: string;
+  ok: boolean;
+  live: boolean;
+  output: string;
+}
+
 export interface McpServer {
   id: number;
   name: string;
@@ -1266,6 +1296,16 @@ export const api = {
     return request<LogEvent[]>(`/api/v1/events?${qs.toString()}`);
   },
   getEventTypes: () => request<EventTypeInfo[]>("/api/v1/events/types"),
+
+  // ---- MCP servers handed to an agent's own config ----
+  getAgentMcp: (id: number) => request<AgentMcpReport>(`/api/v1/agents/${id}/mcp`),
+  syncAgentMcp: (id: number, confirmSecrets: boolean) =>
+    request<AgentMcpReport>(`/api/v1/agents/${id}/mcp/sync`, {
+      method: "POST",
+      body: JSON.stringify({ confirm_secrets: confirmSecrets }),
+    }),
+  probeAgentMcp: (id: number, server: string) =>
+    request<AgentMcpProbe>(`/api/v1/agents/${id}/mcp/probe`, { method: "POST", body: JSON.stringify({ server }) }),
 
   // ---- MCP servers ----
   listMcpServers: () => request<McpServer[]>("/api/v1/mcp/servers"),

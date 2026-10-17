@@ -106,6 +106,25 @@ class AgentAdapter(ABC):
         RuntimeError if it can't be read (command failed / unsupported)."""
         raise RuntimeError(f"{self.display_name} adapter can't read settings back")
 
+    # -- optional: hand the app's MCP servers to this agent ----------------------
+    # An external agent runs tools itself, from ITS OWN config. An adapter that
+    # returns a store here lets core/agents/mcp_sync.py write the app's servers
+    # into that file (only `lai_*` entries) and read them back. None = this
+    # agent has no file we know how to write MCP servers into.
+
+    def mcp_store(self):
+        return None
+
+    def mcp_probe_command(self, agent_key: str) -> Optional[list[str]]:
+        """argv that asks the agent's own CLI about one server (e.g. to
+        connect to it). None = the CLI has no such command."""
+        return None
+
+    def mcp_probe_is_live(self) -> bool:
+        """True if mcp_probe_command really connects to the server; False if
+        it only prints what is configured."""
+        return False
+
 
 _ADAPTERS: dict[str, AgentAdapter] = {}
 

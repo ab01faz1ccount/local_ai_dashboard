@@ -758,3 +758,16 @@ a:focus-visible {
 .compare-table tr.compare-differs td { background: var(--accent-soft); }
 .compare-table tr.compare-differs td:first-child { box-shadow: inset 3px 0 0 var(--accent); font-weight: 600; }
 .compare-table tr.compare-note-row td { font-size: 12px; color: var(--text-muted); font-style: italic; line-height: 1.5; }
+
+/* -- MCP servers written into an external agent's own config -- */
+.agent-mcp-sync { flex-basis: 100%; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; margin-top: 6px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface-raised); }
+.agent-mcp-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.agent-mcp-head .muted { font-size: 11px; font-family: var(--font-mono); overflow-wrap: anywhere; }
+.agent-mcp-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.agent-mcp-list li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.agent-mcp-state.ok { color: var(--accent-strong); }
+.agent-mcp-state.warn { color: #d99a2b; }
+.agent-mcp-state.muted { color: var(--text-muted); }
+.agent-mcp-actions { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.agent-mcp-note { margin: 0; font-size: 12px; line-height: 1.5; max-width: 70ch; }
+.agent-mcp-probe pre { margin: 6px 0 0; padding: 8px; max-height: 160px; overflow: auto; font-size: 11px; background: var(--surface); border-radius: 6px; white-space: pre-wrap; }
